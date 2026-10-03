@@ -461,7 +461,7 @@ fn summarize(
     let (mut min, mut max) = ((v(first), first), (v(first), first));
     let (mut min_abs, mut max_abs) = ((v(first).abs(), first), (v(first).abs(), first));
     let (mut area, mut sum, mut sum_abs) = (0.0, 0.0, 0.0);
-    let (mut weighted, mut centroid) = ([0.0_f64; 3], [0.0_f64; 3]);
+    let (mut weighted, mut weighted_abs, mut centroid) = ([0.0_f64; 3], [0.0_f64; 3], [0.0_f64; 3]);
     for &m in members {
         let val = v(m);
         area += node_areas[m as usize];
@@ -513,7 +513,13 @@ fn summarize(
         variance,
         std_error: (variance / n).sqrt(),
         center_of_mass: weighted.map(|w| if sum == 0.0 { f64::NAN } else { w / sum }),
-        center_of_mass_abs: weighted_abs.map(|w| if sum_abs == 0.0 { f64::NAN } else { w / sum_abs }),
+        center_of_mass_abs: weighted_abs.map(|w| {
+            if sum_abs == 0.0 {
+                f64::NAN
+            } else {
+                w / sum_abs
+            }
+        }),
         centroid: centroid.map(|c| c / n),
     }
 }
