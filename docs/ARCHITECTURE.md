@@ -179,3 +179,74 @@ that plugs into `overlay`. `ClusterNeighborhoods` precomputes searches for repea
 clustering. Conformance is against `SurfaceMetrics`, `SurfMeasures` and `SurfClust`
 (`tests/mesh_conformance.rs`, `tests/cluster_conformance.rs`); the one known
 disagreement (SUMA's millimetre radius search) and its direction are pinned by a test.
+
+## 12. Volume clustering (Phase 7)
+
+`volume_cluster` is the voxel counterpart of `cluster`, kept separate because grid
+neighbors, voxel counts and volumes are not mesh nodes and areas. It takes plain
+slices (threshold values, optional separate data values, optional mask) plus a
+`VolumeDomain`, whose affine gives world coordinates and the voxel volume
+(`VolumeDomain::{ijk_to_world, voxel_volume}`). `VoxelConnectivity` is AFNI's NN1/2/3;
+`VoxelThreshold` has inclusive ends (right tail, left tail, two-sided, within range);
+`Tails::Separate` is `-bisided`. Clusters are found by breadth-first search seeded
+from the lowest voxel index, ranked by size (stable), and summarized (count, volume,
+grid and world centroid, center of mass by absolute value, bounding box, signed
+mean, SEM, peak). Conformance is against `3dClusterize` cluster maps (exact) and
+reports (to printing precision), including an oblique case: connectivity never uses
+the affine, and AFNI reports cardinal coordinates (`tests/volume_cluster_conformance.rs`).
+Several AFNI behaviors are quirks (`-clust_vol` is a voxel count, the "Volume"
+column prints voxels, zero data is never clustered); the roadmap log records which
+ones core copies and which it fixes.
+
+## 13. ROIs (Phase 8)
+
+`roi` is the file-neutral ROI: identity, parent domain and hemisphere, label, look,
+drawing type and the ordered strokes (`RoiStroke`: element kind, brush action,
+nodes). Every code enum has an `Other(n)` variant so unknown codes survive a round
+trip. `NodeSet` is the canonical sorted-unique node set with union, intersection and
+difference. `rois_to_dataset` makes SUMA's `ROI2dataset` dataset (sparse, one integer
+label column, optional padding; `OverlapPolicy` decides who keeps a shared node).
+`roi_ops` works on node sets and a `SurfaceTopology`/`SurfaceMesh`: boundary, grow and
+shrink by rings or by surface distance, connected components and cleanup, shortest
+path, join-ends, and fill. `roi_edit` expresses edits as `RoiCommand` values whose
+application returns the inverse, and `RoiEditor` keeps undo/redo plus the three
+drawing actions (draw a path, join the ends, fill); mouse picking stays in the viewer.
+`afni_io::adapt::{roi_to_core, RoiEnvelope}` converts `NodeRoi` losslessly. Conformance:
+`ROI2dataset` (dataset rows, node order, padding; in `afni-io/tests/roi_conformance.rs`),
+`SurfDist` and `ROIgrow` (`tests/roi_ops_conformance.rs`). Findings are in the roadmap
+log: `-nodelist` keeps junction repeats, the winner of a contested node is `qsort`
+luck, and `ROIgrow` under-reaches on irregular meshes.
+
+## 14. Time-series cleaning and seed correlation (Phase 9)
+
+`signal` holds the generic operations: Legendre regressors, mean/linear/quadratic
+detrend, an `OrtProjector`, `normalize_l2`, and `bandpass_vectors`, a port of AFNI's
+`THD_bandpass_vectors` (even FFT length, band bins from 32-bit arithmetic, edge taper
+0.5 or 0.05 with orts, filtered orts projected out, and AFNI's removed-dimension count).
+The FFT is a small radix-2/Bluestein implementation, so the crate still has no
+dependency to feature-gate. `instacorr` is the SUMA orchestration: a linear detrend,
+bandpass and Legendre/extra orts for the whole dataset, a mean detrend for an outside
+seed, unit-length rows so a seed is one dot product, ROI seeds as the renormalized mean
+of prepared rows. Output is a `SeedCorrelation` carrying `Correl(samples, 1,
+removed_dof)`, so p-values use the degrees of freedom the cleaning left. Conformance
+runs AFNI's own `THD_bandpass_vectors` and the SUMA call sequence through a C harness
+on libmri (`tests/signal_conformance.rs`, `tests/instacorr_conformance.rs`); a real
+NIML file goes through it in `afni-io/tests/instacorr_dataset.rs`.
+
+## 15. Networks and tracts (Phase 10)
+
+`graph::Graph` is the file-neutral network behind `Graph_Bucket`: nodes (index, position,
+label), an `EdgeLayout` (`Full` column-major, `LowerTriangle`, `LowerTriangleWithDiagonal`,
+or `Sparse` with explicit edges that name nodes by INDEX) and one or more `EdgeMeasure`s.
+It answers the questions a viewer asks without a per-cell search: the endpoints of an
+edge, the edge of a matrix cell (closed-form for triangles), a dense `n x n` matrix per
+measure, a finite `ColumnRange`, the edges passing a `Threshold`, and node strength.
+`tract::TractSet` holds bundles of tracts with polyline length (AFNI's `Tract_Length`),
+tangents, `SpatialBounds` and selection (bundle tag, id, length via `Threshold`, point
+count, sphere, box). Positions are kept in AFNI's DICOM frame as files have them;
+`domain::flip_dicom_ras` converts. `afni-io` owns the files (`graph::GraphBucket`,
+`tract::TractNetwork`, ASCII and binary) and `adapt` converts, keeping the file's extras
+when given the original as a template. Conformance: real `Graph_Bucket` files from
+`ConvertDset -graphize` and real tract files from AFNI's FATCAT writer, read back against
+the inputs that made them (`afni-io/tests/graph_tract.rs`).
+

@@ -22,11 +22,15 @@ Status: ✅ done · 🚧 in progress · ⬜ not started
 | 4 | Colors, continuous maps, and label tables | ✅ |
 | 5 | Thresholding, overlay evaluation, and compositing | ✅ |
 | 6 | Surface topology, geometry metrics, and clustering | ✅ |
-| 7 | Volume neighborhoods and clustering | ⬜ |
-| 8 | File-neutral ROI model and operations | ⬜ |
-| 9 | Time-series preprocessing and seed correlation | ⬜ |
-| 10 | Graph, tract, and other derived semantic models | ⬜ |
+| 7 | Volume neighborhoods and clustering | ✅ |
+| 8 | File-neutral ROI model and operations | ✅ |
+| 9 | Time-series preprocessing and seed correlation | ✅ |
+| 10 | Graph, tract, and other derived semantic models | ✅ |
 | 11 | Consumer migration, performance, and API stabilization | ⬜ |
+
+The consolidated list of differences from AFNI/SUMA (one row each, with the owner
+decision it came from) is [`docs/DIFFERENCES_FROM_AFNI.md`](docs/DIFFERENCES_FROM_AFNI.md);
+update it whenever a result can differ.
 
 Open questions awaiting a decision are numbered in [Open decisions](#open-decisions) (none open; D1–D20 are resolved as R6–R25).
 
@@ -377,90 +381,98 @@ algorithm.
 
 ---
 
-## Phase 7 — Volume neighborhoods and clustering ⬜
+## Phase 7 — Volume neighborhoods and clustering ✅
 
 This phase supports the future slice viewer and avoids making the surface
 cluster API masquerade as a volume algorithm.
 
-- [ ] Define checked 3D index/coordinate conversion over a `VolumeDomain`.
-- [ ] Implement AFNI NN1/NN2/NN3 voxel connectivity and explicit face/edge/
+- [x] Define checked 3D index/coordinate conversion over a `VolumeDomain`.
+- [x] Implement AFNI NN1/NN2/NN3 voxel connectivity and explicit face/edge/
   corner neighborhood iteration.
-- [ ] Support minimum voxel count and physical volume using voxel dimensions
+- [x] Support minimum voxel count and physical volume using voxel dimensions
   or affine-derived voxel volume.
-- [ ] Support one-sided, two-sided/bisided, within-range, and outside-range
-  threshold masks with deterministic cluster ordering.
-- [ ] Report peak voxel/value, voxel count, physical volume, index centroid,
+- [x] Support one-sided, two-sided/bisided, and within-range threshold masks with
+  deterministic cluster ordering. (Outside-range was dropped: `3dClusterize` has no
+  such mode; its two-sided form already keeps both tails.)
+- [x] Report peak voxel/value, voxel count, physical volume, index centroid,
   and transformed world-coordinate centroid.
-- [ ] Match `3dClusterize` and `mri_clusterize.c` on committed synthetic
-  volumes, including oblique geometry where only reported coordinates—not
-  connectivity—use the affine.
-- [ ] Keep cluster simulation/correction tables out of the first pass; add a
+- [x] Match `3dClusterize` and `mri_clusterize.c` on committed synthetic
+  volumes, including an oblique case. Finding: neither connectivity NOR AFNI's
+  reported coordinates use the oblique matrix (see the discovery log).
+- [x] Keep cluster simulation/correction tables out of the first pass (not started, as planned); add a
   separate phase later if `3dClustSim` compatibility becomes a requirement.
 
 ---
 
-## Phase 8 — File-neutral ROI model and operations ⬜
+## Phase 8 — File-neutral ROI model and operations ✅
 
-- [ ] Port the semantic model from `sumaru/src/roi.rs`: identity, parent
+- [x] Port the semantic model from `sumaru/src/roi.rs`: identity, parent
   domain/surface, side, label key, appearance, creation/edit status, drawing
   type, provenance, and ordered stroke/fill data.
-- [ ] Convert losslessly to/from `afni_io::NodeRoi`, preserving unknown numeric
+- [x] Convert losslessly to/from `afni_io::NodeRoi`, preserving unknown numeric
   codes in the I/O envelope even when core cannot interpret them.
-- [ ] Provide canonical unique-node sets, validation against a surface domain,
+- [x] Provide canonical unique-node sets, validation against a surface domain,
   node-range summaries, label-table entries, and dataset conversion.
-- [ ] Add topology-based open/closed path validation, shortest-path joining,
+- [x] Add topology-based open/closed path validation, shortest-path joining,
   boundary extraction, and filled-area construction as pure operations.
-- [ ] Define union, intersection, difference, dilation/erosion by rings or
+- [x] Define union, intersection, difference, dilation/erosion by rings or
   geodesic distance, and connected-component cleanup.
-- [ ] Preserve edit operations as explicit commands suitable for undo/redo;
+- [x] Preserve edit operations as explicit commands suitable for undo/redo;
   keep mouse/picking gestures in the viewer.
-- [ ] Compare NIML replay and ROI-to-dataset output against
+- [x] Compare NIML replay and ROI-to-dataset output against
   `SUMA_NIMLDrawnROI_to_DrawnROI`, `SUMA_ROI2dataset`, and compact committed
-  fixtures.
+  fixtures. (Done against the `ROI2dataset` program, which calls both; plus
+  `SurfDist` and `ROIgrow` for the path and growth operations. Stroke-by-stroke
+  replay was not needed: SUMA's replay only rebuilds an undo stack, and the node
+  sets and orders it yields are what was compared.)
 
 ---
 
-## Phase 9 — Time-series preprocessing and seed correlation ⬜
+## Phase 9 — Time-series preprocessing and seed correlation ✅
 
-- [ ] Port `InstaCorrOptions`, prepared row storage, invalid-row masks, and
+- [x] Port `InstaCorrOptions`, prepared row storage, invalid-row masks, and
   seed correlation from `sumaru/src/instacorr.rs`.
-- [ ] Separate generic signal operations—demean, detrend, Legendre bases,
+- [x] Separate generic signal operations—demean, detrend, Legendre bases,
   projection, normalization, FFT bandpass—from the InstaCorr orchestration.
-- [ ] Match `THD_bandpass_vectors`, `thd_instacorr.c`, and
+- [x] Match `THD_bandpass_vectors`, `thd_instacorr.c`, and
   `SUMA/SUMA_dot.c`, including `normalize_dset`, `polort`, filtered nuisance
   regressors, removed degrees of freedom, Nyquist clipping, and short-series
   rejection.
-- [ ] Return derived correlation data with correct statistical metadata rather
+- [x] Return derived correlation data with correct statistical metadata rather
   than only a `Vec<f32>`; the correlation degrees of freedom must reflect
   removed regressors/filtering.
-- [ ] Support a single node seed first, then averaged ROI/multi-node seeds with
+- [x] Support a single node seed first, then averaged ROI/multi-node seeds with
   a clearly defined normalization order.
-- [ ] Feature-gate FFT dependencies if the base crate otherwise needs none.
-- [ ] Test against AFNI/SUMA prepared vectors and output correlations, not just
-  internal Rust reference calculations.
+- [x] Feature-gate FFT dependencies if the base crate otherwise needs none. (Not
+  needed: the FFT is written in the crate, no dependency was added.)
+- [x] Test against AFNI/SUMA prepared vectors and output correlations, not just
+  internal Rust reference calculations. (SUMA itself cannot be driven from the
+  command line; the tests run AFNI's own library calls in SUMA's order.)
 
 ---
 
-## Phase 10 — Graph, tract, and other derived semantic models ⬜
+## Phase 10 — Graph, tract, and other derived semantic models ✅
 
 Only models and algorithms shared by more than one consumer belong here; file
 syntax remains in `afni-io`.
 
-- [ ] Extract the file-neutral portion of `GraphDataset`: nodes, labels,
+- [x] Extract the file-neutral portion of `GraphDataset`: nodes, labels,
   coordinates, full/triangular/sparse edge layouts, measures, ranges, and
   efficient matrix materialization.
-- [ ] Put `Graph_Bucket` parsing/writing in `afni-io` and conversion/validation
+- [x] Put `Graph_Bucket` parsing/writing in `afni-io` and conversion/validation
   in adapters.
-- [ ] Extract tract bundles, tract points, bounds, and selection/filtering;
+- [x] Extract tract bundles, tract points, bounds, and selection/filtering;
   keep `TAYLOR_TRACT_DATUM` parsing in `afni-io`.
-- [ ] Reuse core color/range/threshold types for graph edges and tract scalar
+- [x] Reuse core color/range/threshold types for graph edges and tract scalar
   attributes instead of inventing viewer-local variants.
-- [ ] Consider reusable resampling/domain-mapping primitives only after their
+- [x] Consider reusable resampling/domain-mapping primitives only after their
   coordinate and interpolation semantics are specified. Do not infer that
   equal node counts imply compatible surfaces except under an explicit
-  standard-template policy.
-- [ ] Add other semantic models—surface states, annotations, time courses—only
-  when both a parser and at least one nontrivial consumer need them.
+  standard-template policy. (Considered and deferred: no consumer needs one yet and
+  the semantics are unspecified; nothing was added.)
+- [x] Add other semantic models—surface states, annotations, time courses—only
+  when both a parser and at least one nontrivial consumer need them. (None qualified
+  beyond graphs and tracts, which are done; time courses are covered by Phase 9.)
 
 ---
 
@@ -541,10 +553,10 @@ sumaru-facing items were deferred. "Deferred" entries stay valid and can be reop
 | R8 | 3 | (was D3) Below the curve's range, take max abs(stat) from the data, not from stored statistics. | Phase 3 (max abs stat) |
 | R9 | 3 | (was D4) Skip `3dFDR -old`. | Phase 3 (extended statistics) |
 | R10 | 3 | (was D5) Keep the `fdr` fixture dump files for now. | Phase 3 (fixtures) |
-DONE: `suma_colormaps` (9 maps, verified against `MakeColorMap -std`); see the discovery log. | Phase 4 (not AFNI definitions) |
-DONE in `afni-io` (git dependency, git-ignored local `[patch]`, README updated); see the discovery log. | Phase 4 (building afni-io alone) |
+| R11 | 4 | (was D7) Port SUMA's named colormaps, verify them against AFNI, and label sumaru's three non-AFNI maps (`fire`, `afni_p2_spanned`, `amber_monochrome`) as sumaru's own. DONE: `suma_colormaps` (9 maps, verified against `MakeColorMap -std`); the sumaru labeling is recorded, not done (sumaru is read-only). | Phase 4 (not AFNI definitions) |
+| R12 | 4 | (was D8) `afni-io` depends on `afni-core` through a git dependency tracking `main` for now; move to tagged releases later. DONE in `afni-io` (git dependency, git-ignored local `[patch]`, README updated). | Phase 4 (building afni-io alone) |
 | R13 | 5 | (was D10) A NaN threshold value is hidden by default; `MissingThreshold::Show` gives AFNI parity. | Phase 5 (non-finite threshold values) |
-DONE: `ClusterSummary::center_of_mass_abs`. | Phase 6 (center of mass is fragile) |
+| R14 | 6 | (was D18) Add an absolute-value-weighted center of mass as a separate field; keep SurfClust's signed one. DONE: `ClusterSummary::center_of_mass_abs`. | Phase 6 (center of mass is fragile) |
 | R15 | 4 | (was D6) Strict IEEE bytes are "AFNI's" color scale; the one-byte FMA difference stays documented. | Phase 4 (platform-dependent bytes) |
 | R16 | 5 | (was D9) Deferred: keep core's `Outside` and `AbsoluteAbove` as they are; sumaru migrates later. | Phase 5 (thresholds disagree about their own boundary) |
 | R17 | 5 | (was D11) Deferred: sumaru keeps its continuous stops; core offers both models. | Phase 5 (panes are not N stops at i/(N-1)) |
@@ -974,3 +986,199 @@ DONE: `ClusterSummary::center_of_mass_abs`. | Phase 6 (center of mass is fragile
   `weighted_abs` before it is declared), so a fresh `afni-io` clone fails until the
   fixed `cluster.rs` is pushed. (d) `ClusterSummary::center_of_mass_abs` is the
   |value|-weighted center; the signed `center_of_mass` is unchanged.
+- **2026-10-02 · Phase 7 (3dClusterize: what the program really does).** Checked
+  against the live program and its source (`src/ptaylor/3dClusterize.c`,
+  `edt_clust.c`, `edt_clust2.c`, `edt_buildmask.c`), 18 synthetic cases, every
+  cluster map identical and every report column within its printed precision.
+  (a) **`-clust_vol V` is not a volume.** The option negates `V` exactly as
+  `-clust_nvox` does, and the code then takes `ptmin = (int)fabs(vmul)`, so
+  `-clust_vol 10` keeps clusters of at least 10 VOXELS whatever the voxel size
+  (a 3-voxel, 45 microliter cluster was dropped by `-clust_vol 10`). The report's
+  "Volume threshold" line multiplies by the voxel volume afterwards, hiding it.
+  Core's `min_volume` is a true volume (voxel count times the voxel's determinant),
+  so it will NOT reproduce `-clust_vol`; use `min_voxels` for parity.
+  (b) **The "Volume" column prints the voxel count** (`volsum = num_pt * 1`,
+  because the clustering is done on a unit grid). Core reports `voxel_count` and
+  `volume` separately.
+  (c) **Order.** Clusters are ranked by a stable bubble sort on voxel count, so
+  equal sizes keep discovery order (lowest voxel index first). For `-bisided` AFNI
+  clusters the right tail first and the left tail second, then sorts the
+  concatenation, so at equal size every positive cluster precedes every negative
+  one even when the negative voxel has the lower index. Core reproduces this. When
+  there are 3333 or more clusters AFNI skips the sort entirely and prints
+  `** TOO MANY CLUSTERS TO SORT BY VOLUME ***`; core always ranks.
+  (d) **Zero data is never clustered.** The thresholded DATA volume is clustered by
+  its non-zero voxels, so a voxel that passes the threshold but has data exactly
+  zero is dropped (and can split a cluster). `exclude_zero_data` (default on)
+  keeps that; the surface API's default is the opposite (see R22/D16), because
+  SurfClust treats zeros differently.
+  (e) **Inclusive thresholds.** Right tail `v >= t`, left tail `v <= t`,
+  two-sided `v <= left || v >= right`, within-range inclusive at both ends.
+  (f) **Oblique data.** Connectivity ignores the affine, as the roadmap
+  predicted, but the report coordinates ALSO ignore an oblique header: AFNI maps
+  voxels through the cardinal grid (`THD_3dind_to_3dmm`), not `IJK_TO_DICOM_REAL`.
+  An oblique volume gave a report identical to its cardinal twin. Pass
+  `ijk_to_dicom_cardinal` for byte parity or `ijk_to_dicom_real` for true positions
+  (`afni-io` has both).
+  (g) **Report formulas.** Mean is signed (default since April 2021; the abs form
+  is `mean_abs`); SEM is `sqrt(s^2/n)` with `s^2` from the sum of squares (core uses
+  the two-pass form, equal within printing precision); the peak is the largest
+  absolute value, reported signed, first voxel met on a tie (core visits neighbors
+  in AFNI's k, j, i order so ties agree); the center of mass weights by absolute
+  value and the table prints coordinates with ONE decimal and mean/SEM/peak with
+  about six digits, which limits how tightly the report can be compared (the
+  cluster maps are exact).
+  (h) **Thresholds are 32-bit floats** in AFNI; pass `t as f32 as f64` for exact
+  agreement on 32-bit data (the test does). Also `-mask` zeroes both threshold and
+  data volumes, so a masked voxel can never be active.
+  (i) **Not ported:** `p=` thresholds (convert with `afni_core::stats` first),
+  `-abs_table_data`, the global totals line, `-binary`/`-pref_dat` outputs (map
+  and masked data are derivable from `labels`), `-orient` (a caller's matrix choice)
+  and `-mask_from_hdr`.
+- **2026-10-02 · Phase 7 (new `VolumeDomain` helpers).** `ijk_to_world` and
+  `voxel_volume` (absolute determinant of the affine's 3x3 block) were added to
+  `VolumeDomain`; both are plain arithmetic and need an affine.
+- **2026-10-02 · Phase 8 (ROIs against ROI2dataset, SurfDist and ROIgrow).**
+  Checked against the live programs on the 16 real `.niml.roi` files in
+  `afni-io/tests/data/real/roi` (26 `ROI2dataset` cases, all reproduced),
+  120 `SurfDist` node pairs and 9 `ROIgrow` cases (`afni-core`).
+  (a) **A node's membership** in an ROI is every node of every stroke, whatever the
+  stroke's element kind. `ROI2dataset -nodelist` writes them exactly as drawn,
+  junction repeats included (`Roi::drawn_nodes`); `-nodelist.nodups` keeps first
+  occurrences (`drawn_nodes_unique`). SUMA's own `SUMA_NodesInROI` (used for
+  datasets) instead drops a node that repeats the last node of the previous stroke
+  (`Roi::ordered_nodes`), which is NOT what `-nodelist` writes; the two differ in
+  files, so core offers both under different names.
+  (b) **Contested nodes are platform luck.** When ROIs with DIFFERENT labels share
+  a node, `ROI2dataset` keeps one label, but which one is not "first" or "last":
+  it sorts node/label pairs with the C library's `qsort` (`SUMA_z_dqsort`), which
+  does not keep equal keys in order, and the result looked random on this machine
+  (about half of 90 contested nodes went each way). Core's default is the first
+  ROI's label (`OverlapPolicy::FirstWins`), with `LastWins` and `Error`; the
+  conformance test checks the node set, every uncontested label, and that each
+  contested label is one of its claimants. The real fixtures share nodes only
+  between ROIs of one label, so relabelled copies were generated to exercise this.
+  (c) **Padding**: `-pad_to_node N` writes rows 0..=N and refuses `N` below the
+  largest node (SUMA's own check); `-pad_label` defaults to 0. Matches.
+  (d) **Shortest paths**: path lengths along the mesh edges equal `SurfDist`
+  (graph distance) to its two printed decimals on all 120 pairs.
+  (e) **Growth by distance**: `ROIgrow -lim` reaches a SUBSET of the nodes a true
+  shortest path reaches within the limit: identical on the regular icosahedron,
+  but on the irregular meshes it missed 6, 11 and 1 nodes in three cases (all
+  within the limit by the verified path length). Same cause as `SurfClust -rmm`
+  (Phase 6); `dilate_by_distance` is the true distance and the shortfall is pinned
+  by a test. No SUMA-compatible mode was added (see R21).
+  (f) **Lossless file round trip.** Every ROI in every real file converts to core
+  and back to the identical `NodeRoi`, including `Type="4"` (sumaru's, undefined in
+  SUMA), absent colors/type, odd stroke codes, and ids with stray spaces. Codes are
+  kept as `Other(n)` variants; attributes core cannot express travel in
+  `afni_io::adapt::RoiExtras`.
+  (g) **Not carried in `.niml.roi`:** triangle paths, per-stroke distances, the
+  viewer's color-by-label flag and the ROI's provenance. They exist on the core
+  type (taken from sumaru's model) and are simply empty after reading a file.
+  (h) **Deliberately small:** fill takes a seed and refuses to leak off the rim of
+  an open surface. (An earlier version of this note said SUMA's fill picks the smaller
+  side; that was not checked and is wrong as far as the source shows: SUMA's
+  `SUMA_FillToMask` also floods from a seed up to the mask. The two fills have NOT
+  been compared on real data, and what SUMA does with a boundary that leaks is
+  unverified.) SUMA's stroke "action stack" is replaced by the commands in `roi_edit`. `erode_by_distance` and
+  `erode`/`dilate` by rings have no SUMA oracle (ROIgrow only grows); they are
+  unit-tested on a grid.
+- **2026-10-03 · Phase 9 (cleaning and seed correlation against AFNI's own code).**
+  Checked by calling `THD_bandpass_vectors` and the SUMA call sequence from a C
+  harness linked to libmri (`regenerate_signal_refs.sh`, `regenerate_instacorr_refs.sh`):
+  21 filter cases and 6 correlation cases, the removed-dimension count exact in all.
+  (a) **Agreement.** Every case without regressors, and the case with one surviving
+  regressor, matches AFNI's 32-bit output to about 2e-6 in the series and 4e-7 in
+  correlations, including odd lengths, half-bin band edges, a band above Nyquist, and
+  a band collapsed to one bin.
+  (b) **This build of AFNI uses arbitrary FFT lengths.** `csfft_nextup_even` returns
+  the length rounded up to even (137 -> 138, 211 -> 212: not 2-3-5 smooth), because AFNI
+  is built with `USE_FFTN`. Core does the same. The older table of 2^a 3^b 5^c sizes is
+  used by builds without it, which would give slightly different padding and band bins.
+  (c) **Polynomial regressors under a linear detrend leave rounding noise.** SUMA's
+  setup (a linear detrend, then Legendre orts) filters copies of the orts; the constant
+  and linear columns are annihilated down to float noise (about 1e-7). AFNI's
+  pseudo-inverse keeps directions down to 1e-8 of the largest, so it keeps the noise and
+  projects out two arbitrary extra dimensions that depend on 32-bit rounding. Core drops
+  negligible columns instead. Measured effect on correlations: about 0.014 (SUMA's
+  default setup, 120 samples) to 0.035 (polort 1, 100 samples). The removed-dimension
+  count (which includes those orts) is AFNI's, so the statistic's degrees of freedom
+  agree. A caller who needs AFNI's exact numbers cannot get them: they are not
+  reproducible between platforms.
+  (d) **Removed dimensions can exceed the series length.** A band that collapses to one
+  bin gave 102 removed dimensions for 100 samples (AFNI does not cap it; sumaru capped
+  at samples - 1). Core reports AFNI's count and attaches the `Correl` statistic only
+  when `samples - 1 - removed_dof > 0`.
+  (e) **Counting quirks.** A mean-only detrend (`qdet` 0) adds nothing to the count; a
+  linear one adds 1, a quadratic 2; the whole count is scaled by `len / nfft` and rounded
+  when the FFT was padded (sumaru added its polynomial count after scaling and so
+  differed on odd lengths). AFNI's `ftop <= fbot` handling assigns `fbot` instead of
+  `ftop` (a typo that turns the call into a low-pass) and a non-positive time step is
+  silently set to 1.0; core returns errors for both. `THD_bandpass_OK` and
+  `THD_bandpass_remain_dim` treat a one-or-two-bin band as "ignore the filter", but
+  `THD_bandpass_vectors` filters it; core follows the latter and offers the former as
+  `bandpass_remaining_dimension`.
+  (f) **Short series.** AFNI refuses fewer than 9 samples whenever any filtering,
+  detrending or orts are requested, even with no band; sumaru enforced it only with a
+  band. Core follows AFNI (`InstaCorrOptions::validate`), and SUMA's rule that
+  `polort + 1 < samples - 3`.
+  (g) **Seed handling.** A seed taken from the dataset is a prepared row (linear
+  detrend); an outside seed uses a MEAN detrend, per `SUMA_dot.c`. AFNI also scales an
+  outside seed to unit length when `normalize_dset` is off; core leaves the raw mode
+  entirely raw (and attaches no statistic), as sumaru did. An ROI seed is the renormalized
+  mean of the prepared rows (the order AFNI's seed blur uses).
+  (h) **Invalid rows.** A row with a non-finite value is zeroed before filtering (two
+  series share one complex FFT, so a NaN would otherwise corrupt its partner) and
+  correlates as NaN; a row left with squared length <= 1e-20 is also invalid, where
+  AFNI leaves it unscaled and gets about 0.
+  (i) **Datasets.** NIML time series store their columns as generic numbers, so
+  `prepare_dataset` accepts `TimePoint` columns or, when there are none, the numeric
+  generic columns of a time-series dataset. A first fixture attempt had an extra index
+  column from `ConvertDset -add_node_index` on top of the node numbers I had written;
+  the generator now writes only the values.
+  (j) **Not done:** the volume-side `THD_instacorr` (blur, `qdet = polort`, global orts,
+  despike), correlation methods other than Pearson, and Fisher-z output.
+- **2026-10-03 · Phase 10 (graphs and tracts against AFNI's own writers).**
+  Real `Graph_Bucket` files were made with `ConvertDset -graphize` from inputs of known
+  content (full, LPI coordinates, triangular, sparse with indices 5..8), and real
+  `.niml.tract` files with AFNI's FATCAT code (`TrackIO.c`, compiled into a small C
+  program), ASCII and binary, with AFNI's `Tract_Length` values. All were read back
+  against what went in.
+  (a) **Sparse edges name nodes by INDEX, not position.** With node indices 5..8 and an
+  edge list `5 6`, AFNI's `INDEX_LIST` holds `5 6`. sumaru took them as positions, which
+  is only right when indices are 0..n-1. Core stores the indices and resolves them to
+  positions on construction (an edge naming a missing node is an error).
+  (b) **Column-major full matrices.** `-multigraph`/`-onegraph` document "column
+  stacked"; row `e` is element `(e % n, e / n)`. Core's `Graph::value(row, column)`
+  matches, and keeps direction for full and sparse layouts and mirrors triangles.
+  (c) **Triangular packing** is `(1,0) (2,0) .. (n-1,0) (2,1) ..`, as the comment in
+  `suma_datasets.c` says; core finds an edge's endpoints by binary search and a cell's edge in
+  closed form (sumaru searched linearly and rebuilt per cell). AFNI infers a triangle
+  from a column of `M(M-1)/2` values; `tri_diag` has no producer in `ConvertDset` (a
+  `M(M+1)/2` column is always read as the lower triangle of `M+1` nodes first), so that
+  layout rests on the source and unit tests, not a real file.
+  (d) **`-graph_XYZ_LPI`**: AFNI flips LPI input to RAI by negating x and y, exactly
+  `domain::flip_dicom_ras`; checked on all four nodes. Graph and tract coordinates are
+  kept as files have them (AFNI's DICOM frame); sumaru converted at read time, core
+  offers `positions_ras` and `TractSet::flipped`.
+  (e) **File quirks.** Layouts that imply their edges still write an empty
+  `<INDEX_LIST>` element (kept as an extra); `matrix_size` of a sparse graph was written
+  as the EDGE count (`3 3` for 4 nodes), so it is ignored on read and written as `n n`;
+  `COLMS_RANGE` goes stale when numbers change and is dropped on rewrite, as AFNI
+  recomputes it. The `TAYLOR_TRACT_DATUM` second number counts VALUES (3 per point), not
+  points; a count that disagrees is an error. A record whose announced count is wrong
+  cannot be detected (the following rows are consumed), which is inherent to the format.
+  (f) **AFNI accepts what we write.** `AFNI_IO_LIVE=1` hands our written graphs
+  (full, triangular and sparse, attributes written fresh) to `ConvertDset`, which re-saves
+  them with identical nodes, layout and values. There is no AFNI program that reads a
+  `.niml.tract` file without diffusion data, so tract writing is checked by round trips
+  through our reader and by matching the structure AFNI itself wrote; ASCII and binary files
+  from AFNI agree.
+  (g) **Not available from AFNI:** `ConvertDset -o_1D` segfaults on graph datasets (so edge
+  endpoints cannot be dumped by AFNI), and slow-mode `<tract>` elements are read (one
+  untagged bundle) but have no AFNI writer here to test against.
+  (h) **Deliberately not built:** per-point scalar attributes on tracts (FATCAT files carry
+  none), tract colors, resampling between surfaces, and the `Graph_Bucket` link to a tract
+  file as anything but a path string (resolving it is the caller's job).
+

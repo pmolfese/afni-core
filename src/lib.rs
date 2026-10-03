@@ -79,7 +79,15 @@
 //! | [`suma_colormaps`] | SUMA's standard named color maps, exactly | 4 |
 //! | [`composite`] | Alpha compositing (straight alpha) of underlay and overlay planes | 5 |
 //! | [`overlay`] | Overlay evaluation: colors, pass mask, diagnostics | 5 |
+//! | [`volume_cluster`] | Voxel connectivity (NN1/2/3) and clustering of a volume | 7 |
 //! | [`cluster`] | Connected-cluster labeling on a surface (SurfClust-compatible) | 6 |
+//! | [`signal`] | Detrending, Legendre orts, FFT bandpass with orts (`THD_bandpass_vectors`) | 9 |
+//! | [`instacorr`] | Seed correlation: cleaned series, ROI seeds, correlation statistic | 9 |
+//! | [`graph`] | Networks: nodes, matrix/triangle/sparse edge layouts, measures | 10 |
+//! | [`tract`] | Tracts and bundles: length, tangents, bounds, selection | 10 |
+//! | [`roi`] | The ROI model, canonical node sets, ROI-to-dataset (ROI2dataset-compatible) | 8 |
+//! | [`roi_ops`] | Grow/shrink, boundary, components, shortest path, fill on node sets | 8 |
+//! | [`roi_edit`] | Undoable ROI edit commands and an editor | 8 |
 //! | [`mesh`] | Mesh geometry (normals, areas, volume) and distance searches | 6 |
 //! | [`topology`] | Validated triangle-mesh connectivity, diagnostics, rings | 6 |
 //! | [`threshold`] | Thresholds, transparent thresholding, matched-p transfer | 5 |
@@ -148,17 +156,25 @@ pub mod dataset;
 pub mod domain;
 pub mod error;
 pub mod fdr;
+pub mod graph;
+pub mod instacorr;
 pub mod labels;
 pub mod mapping;
 pub mod mesh;
 pub mod numeric;
 pub mod overlay;
+pub mod roi;
+pub mod roi_edit;
+pub mod roi_ops;
+pub mod signal;
 pub mod special;
 pub mod stat;
 pub mod stats;
 pub mod suma_colormaps;
 pub mod threshold;
 pub mod topology;
+pub mod tract;
+pub mod volume_cluster;
 
 // Re-export the two most-used names at the crate root so callers can write
 // `afni_core::Error` instead of `afni_core::error::Error`.

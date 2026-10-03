@@ -86,6 +86,17 @@ impl SurfaceDomain {
     }
 }
 
+/// Convert a position between AFNI's DICOM world frame (what FATCAT, `3dClusterize`
+/// and AFNI files use: +x toward the patient's left, +y posterior, which AFNI calls
+/// "RAI") and the RAS frame NIfTI and GIFTI use (+x right, +y anterior). The two
+/// differ by the sign of x and y, so the same function converts both ways.
+///
+/// Only the axis signs change; nothing is resampled. A position that is already in
+/// the other frame comes out wrong, so keep track of which one you hold.
+pub fn flip_dicom_ras([x, y, z]: [f32; 3]) -> [f32; 3] {
+    [-x, -y, z]
+}
+
 /// A 3D voxel grid. Voxel `(i, j, k)` has linear index `i + nx * (j + ny * k)`,
 /// the same order AFNI and NIfTI use.
 #[derive(Debug, Clone, PartialEq)]
@@ -136,6 +147,39 @@ impl VolumeDomain {
     /// Voxel-to-world matrix, if the source supplied one.
     pub fn affine(&self) -> Option<&[[f64; 4]; 4]> {
         self.affine.as_ref()
+    }
+
+    /// World position `(x, y, z)` of a voxel center given by (possibly fractional)
+    /// grid coordinates `(i, j, k)`: the affine applied to `(i, j, k, 1)`.
+    ///
+    /// Errors if the domain has no affine. The point does not have to lie inside
+    /// the grid (this is plain arithmetic, so fractional and out-of-range
+    /// coordinates are fine).
+    pub fn ijk_to_world(&self, ijk: [f64; 3]) -> Result<[f64; 3]> {
+        let m = self
+            .affine
+            .as_ref()
+            .ok_or_else(|| Error::InvalidParameter {
+                name: "affine".into(),
+                reason: "this volume domain has no voxel-to-world matrix".into(),
+            })?;
+        // Row r of the matrix dotted with (i, j, k, 1).
+        Ok(std::array::from_fn(|r| {
+            m[r][0] * ijk[0] + m[r][1] * ijk[1] + m[r][2] * ijk[2] + m[r][3]
+        }))
+    }
+
+    /// Volume of one voxel in cubic world units (cubic millimetres for an affine
+    /// in millimetres): the absolute determinant of the affine's 3x3 part. `None`
+    /// if the domain has no affine. For a rotated or oblique grid this is still the
+    /// true voxel volume, because rotation does not change a determinant's size.
+    pub fn voxel_volume(&self) -> Option<f64> {
+        let m = self.affine.as_ref()?;
+        // Determinant of the upper-left 3x3 block, expanded along the first row.
+        let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+            - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+        Some(det.abs())
     }
 
     /// Total number of voxels.
@@ -253,5 +297,38 @@ mod tests {
         let s = Domain::Surface(SurfaceDomain::new(None, 10).unwrap());
         let v = Domain::Volume(VolumeDomain::new(None, [2, 3, 4], None).unwrap());
         assert_eq!((s.sample_count(), v.sample_count()), (10, 24));
+    }
+
+    #[test]
+    fn world_positions_and_voxel_volume() {
+        // 2 x 2.5 x 3 mm voxels, origin (10, 20, 30).
+        let affine = [
+            [2.0, 0.0, 0.0, 10.0],
+            [0.0, 2.5, 0.0, 20.0],
+            [0.0, 0.0, 3.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let d = VolumeDomain::new(None, [4, 4, 4], Some(affine)).unwrap();
+        assert_eq!(d.ijk_to_world([1.0, 2.0, 3.0]).unwrap(), [12.0, 25.0, 39.0]);
+        // Fractional and out-of-grid positions are plain arithmetic.
+        assert_eq!(
+            d.ijk_to_world([-1.0, 0.5, 0.0]).unwrap(),
+            [8.0, 21.25, 30.0]
+        );
+        assert_eq!(d.voxel_volume(), Some(15.0));
+        // A rotation (here 90 degrees about z, axes swapped and one flipped) keeps
+        // the volume, and a mirror (negative determinant) still gives a positive one.
+        let rotated = [
+            [0.0, -2.5, 0.0, 0.0],
+            [2.0, 0.0, 0.0, 0.0],
+            [0.0, 0.0, -3.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let r = VolumeDomain::new(None, [4, 4, 4], Some(rotated)).unwrap();
+        assert_eq!(r.voxel_volume(), Some(15.0));
+        // Without a matrix there is no world position and no volume.
+        let none = VolumeDomain::new(None, [2, 2, 2], None).unwrap();
+        assert!(none.ijk_to_world([0.0; 3]).is_err());
+        assert_eq!(none.voxel_volume(), None);
     }
 }

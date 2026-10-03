@@ -27,10 +27,16 @@ difference is written down (see the discovery log in
 | 4 | Colors, continuous maps, AFNI's built-in scales, label colors | done |
 | 5 | Thresholds, transparent thresholding, overlay evaluation, compositing | done |
 | 6 | Mesh topology and geometry, surface clustering (SurfClust-compatible) | done |
-| 7-11 | Volume clustering, ROIs, time series, graphs, migration | planned |
+| 7 | Voxel connectivity and volume clustering (`3dClusterize`-compatible) | done |
+| 8 | ROI model, node-set operations, undoable edits, ROI-to-dataset | done |
+| 9 | Detrend/bandpass/orts (`THD_bandpass_vectors`-exact), seed correlation with its statistic | done |
+| 10 | Graph (network) and tract models, with `afni-io` readers/writers | done |
+| 11 | Consumer migration, performance, API stabilization | planned |
 
 The full plan, with a dated log of every surprise found along the way, is in
-[`afni-core_ROADMAP.md`](afni-core_ROADMAP.md).
+[`afni-core_ROADMAP.md`](afni-core_ROADMAP.md). Every place where results differ from
+AFNI/SUMA, and why, is listed in
+[`docs/DIFFERENCES_FROM_AFNI.md`](docs/DIFFERENCES_FROM_AFNI.md).
 
 ## Layout
 
@@ -42,6 +48,10 @@ The full plan, with a dated log of every surprise found along the way, is in
 | `src/stat.rs`, `src/stats.rs`, `src/special.rs` | `StatSpec`; p-values and critical values with an explicit `Tail`; log-space special functions |
 | `src/curve.rs`, `src/fdr.rs` | Validated FDR/MDF curves with AFNI's interpolation; q-values, curve construction |
 | `src/threshold.rs`, `src/overlay.rs`, `src/composite.rs` | Thresholds (exact boundaries, AFNI/SUMA fades, matched-p transfer); data + display spec to colors and a pass mask; alpha compositing |
+| `src/volume_cluster.rs` | NN1/2/3 voxel connectivity, thresholds, size limits, ranked clusters with peak, centroid and bounding box (world coordinates through the affine) |
+| `src/graph.rs`, `src/tract.rs` | Validated networks (full / triangular / sparse edge layouts, measures, ranges, thresholds) and tracts (length, tangents, bounds, selection) |
+| `src/signal.rs`, `src/instacorr.rs` | Detrend, Legendre regressors, orts, L2 normalize, FFT bandpass (no dependency); SUMA-style seed correlation returning `Correl(samples, 1, removed_dof)` |
+| `src/roi.rs`, `src/roi_ops.rs`, `src/roi_edit.rs` | The ROI model (lossless codes), `NodeSet`, ROI-to-dataset; grow/shrink/boundary/components/shortest path/fill; undoable edit commands |
 | `src/topology.rs`, `src/mesh.rs`, `src/cluster.rs` | Validated triangle-mesh connectivity and diagnostics; normals, areas, distance searches; connected-cluster labeling |
 | `src/color.rs`, `src/afni_colors.rs`, `src/suma_colormaps.rs`, `src/labels.rs` | `Rgba` and continuous maps; AFNI's nine built-in scales, exactly; SUMA's nine standard maps (`bgyr19`, `byr64`, ...); label tables and label colors |
 | `tests/common/` | Shared AFNI-comparison test harness |
@@ -111,6 +121,10 @@ tests/data/regenerate_conformance.sh         # cdf conventions
 tests/data/regenerate_nifti_stats.sh         # nifticdf at full precision
 tests/data/regenerate_afni_colorscales.sh    # display.c color scales
 tests/data/regenerate_suma_colormaps.sh      # SUMA standard maps (MakeColorMap -std)
+tests/data/regenerate_volume_clusters.sh     # 3dClusterize maps and reports
+tests/data/regenerate_roi_refs.sh            # SurfDist distances, ROIgrow growth
+tests/data/regenerate_signal_refs.sh         # THD_bandpass_vectors (builds a C harness on libmri)
+tests/data/regenerate_instacorr_refs.sh      # SUMA InstaCorr steps with AFNI functions
 tests/data/regenerate_scaletomap.sh          # SUMA's value-to-color mapping
 tests/data/regenerate_surface_refs.sh        # SurfaceMetrics / SurfMeasures / SurfClust
 cargo run --release --example cluster_bench  # clustering timings
