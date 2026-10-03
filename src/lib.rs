@@ -76,6 +76,7 @@
 //! | [`stats`] | Tail-aware p-values and critical values | 2 |
 //! | [`color`] | `Rgba`, color stops, continuous maps, interpolation modes | 4 |
 //! | [`afni_colors`] | AFNI's built-in color scales, exactly | 4 |
+//! | [`suma_colormaps`] | SUMA's standard named color maps, exactly | 4 |
 //! | [`composite`] | Alpha compositing (straight alpha) of underlay and overlay planes | 5 |
 //! | [`overlay`] | Overlay evaluation: colors, pass mask, diagnostics | 5 |
 //! | [`cluster`] | Connected-cluster labeling on a surface (SurfClust-compatible) | 6 |
@@ -155,6 +156,7 @@ pub mod overlay;
 pub mod special;
 pub mod stat;
 pub mod stats;
+pub mod suma_colormaps;
 pub mod threshold;
 pub mod topology;
 

@@ -541,10 +541,10 @@ sumaru-facing items were deferred. "Deferred" entries stay valid and can be reop
 | R8 | 3 | (was D3) Below the curve's range, take max abs(stat) from the data, not from stored statistics. | Phase 3 (max abs stat) |
 | R9 | 3 | (was D4) Skip `3dFDR -old`. | Phase 3 (extended statistics) |
 | R10 | 3 | (was D5) Keep the `fdr` fixture dump files for now. | Phase 3 (fixtures) |
-| R11 | 4 | (was D7) Port SUMA's named colormaps, verify them against AFNI, and label sumaru's three non-AFNI maps (`fire`, `afni_p2_spanned`, `amber_monochrome`) as sumaru's own. Implementation pending (Phase 11 or earlier). | Phase 4 (not AFNI definitions) |
-| R12 | 4 | (was D8) `afni-io` depends on `afni-core` through a git dependency tracking `main` for now; move to tagged releases later. Implementation pending: edit `afni-io/Cargo.toml` and document a `[patch]` override for local work. | Phase 4 (building afni-io alone) |
+DONE: `suma_colormaps` (9 maps, verified against `MakeColorMap -std`); see the discovery log. | Phase 4 (not AFNI definitions) |
+DONE in `afni-io` (git dependency, git-ignored local `[patch]`, README updated); see the discovery log. | Phase 4 (building afni-io alone) |
 | R13 | 5 | (was D10) A NaN threshold value is hidden by default; `MissingThreshold::Show` gives AFNI parity. | Phase 5 (non-finite threshold values) |
-| R14 | 6 | (was D18) Add an absolute-value-weighted center of mass as a separate field; keep SurfClust's signed one. Implementation pending. | Phase 6 (center of mass is fragile) |
+DONE: `ClusterSummary::center_of_mass_abs`. | Phase 6 (center of mass is fragile) |
 | R15 | 4 | (was D6) Strict IEEE bytes are "AFNI's" color scale; the one-byte FMA difference stays documented. | Phase 4 (platform-dependent bytes) |
 | R16 | 5 | (was D9) Deferred: keep core's `Outside` and `AbsoluteAbove` as they are; sumaru migrates later. | Phase 5 (thresholds disagree about their own boundary) |
 | R17 | 5 | (was D11) Deferred: sumaru keeps its continuous stops; core offers both models. | Phase 5 (panes are not N stops at i/(N-1)) |
@@ -954,3 +954,23 @@ sumaru-facing items were deferred. "Deferred" entries stay valid and can be reop
   (`DataArray::stat_with_origin`, `Volume::stats_with_origin`, `StatSpec::from_intent`)
   report the problem. The lenient ones are kept only so callers that cannot surface an
   error keep compiling; decide whether to deprecate them.
+- **2026-10-02 · Colormaps, dependency and cluster follow-ups (R11, R12, R14).**
+  (a) `afni_core::suma_colormaps` holds SUMA's nine standard maps (`rgybr20`,
+  `bgyr19`, `gray02`, `gray_i02`, `gray20`, `ngray20`, `bw20`, `byr64`, `bgyr64`),
+  built with SUMA's own fiducial interpolation in `f32` and checked against
+  `MakeColorMap -std` (two printed decimals, so agreement is within 0.005; live
+  replay with `AFNI_CORE_LIVE=1`). `ngray20` is defined identically to `gray20` in
+  SUMA's source. (b) sumaru's maps: `amber_monochrome` matches `pbardefs.h`
+  (`#ffbf00 #010100`, listed top-first in AFNI, so sumaru's dark-to-amber order is
+  right). `fire` ("nih_fire") and `afni_p2_spanned` have NO definition anywhere in
+  the AFNI source (`pbardefs.h` and `src/`), so they are sumaru's own hand-picked
+  palettes; sumaru is read-only here, so the labeling is recorded rather than done:
+  when sumaru is next edited, rename them as sumaru styles and drop the "AFNI" wording
+  from `afni_p2_spanned`. AFNI's other `pbardefs.h` scales (`amber_circle`, the gray
+  circles, ...) are not ported. (c) `afni-io` now fetches `afni-core` from GitHub
+  (`branch = "main"`); a git-ignored `.cargo/config.toml` patches it to the sibling
+  checkout. NOTE for the next push: the commit `9cd201e` ("phase 6") on `main`
+  contains a half-finished edit of `cluster.rs` that does not compile (it uses
+  `weighted_abs` before it is declared), so a fresh `afni-io` clone fails until the
+  fixed `cluster.rs` is pushed. (d) `ClusterSummary::center_of_mass_abs` is the
+  |value|-weighted center; the signed `center_of_mass` is unchanged.

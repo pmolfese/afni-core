@@ -43,7 +43,7 @@ The full plan, with a dated log of every surprise found along the way, is in
 | `src/curve.rs`, `src/fdr.rs` | Validated FDR/MDF curves with AFNI's interpolation; q-values, curve construction |
 | `src/threshold.rs`, `src/overlay.rs`, `src/composite.rs` | Thresholds (exact boundaries, AFNI/SUMA fades, matched-p transfer); data + display spec to colors and a pass mask; alpha compositing |
 | `src/topology.rs`, `src/mesh.rs`, `src/cluster.rs` | Validated triangle-mesh connectivity and diagnostics; normals, areas, distance searches; connected-cluster labeling |
-| `src/color.rs`, `src/afni_colors.rs`, `src/labels.rs` | `Rgba` and continuous maps; AFNI's nine built-in scales, exactly; label tables and label colors |
+| `src/color.rs`, `src/afni_colors.rs`, `src/suma_colormaps.rs`, `src/labels.rs` | `Rgba` and continuous maps; AFNI's nine built-in scales, exactly; SUMA's nine standard maps (`bgyr19`, `byr64`, ...); label tables and label colors |
 | `tests/common/` | Shared AFNI-comparison test harness |
 | `tests/data/conformance/` | Committed AFNI reference values, with the AFNI version that made them |
 | `tests/data/regenerate_*.sh` | Scripts that rebuild those references from AFNI |
@@ -110,6 +110,7 @@ tree):
 tests/data/regenerate_conformance.sh         # cdf conventions
 tests/data/regenerate_nifti_stats.sh         # nifticdf at full precision
 tests/data/regenerate_afni_colorscales.sh    # display.c color scales
+tests/data/regenerate_suma_colormaps.sh      # SUMA standard maps (MakeColorMap -std)
 tests/data/regenerate_scaletomap.sh          # SUMA's value-to-color mapping
 tests/data/regenerate_surface_refs.sh        # SurfaceMetrics / SurfMeasures / SurfClust
 cargo run --release --example cluster_bench  # clustering timings
