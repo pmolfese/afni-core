@@ -295,8 +295,16 @@ impl StatSpec {
 
     /// Like [`from_intent`](Self::from_intent) with [`IntentOrigin::Unknown`],
     /// but reports an ambiguous or malformed correlation as `None`, the same as
-    /// "not a statistic". Kept for callers that cannot surface an error; prefer
-    /// `from_intent`.
+    /// "not a statistic".
+    ///
+    /// **Deprecated.** A malformed correlation silently becomes "no statistic",
+    /// which is exactly the failure this crate otherwise refuses to hide. It is kept,
+    /// working, so existing callers keep compiling; new code should call
+    /// [`from_intent`](Self::from_intent) and handle the `Result`.
+    #[deprecated(
+        since = "0.1.0",
+        note = "hides malformed correlation parameters as `None`; use `StatSpec::from_intent`, which returns a `Result`"
+    )]
     pub fn from_nifti_intent(code: i64, params: [f64; 3]) -> Option<Self> {
         Self::from_intent(code, params, IntentOrigin::Unknown)
             .ok()
@@ -424,6 +432,8 @@ mod tests {
         }
     }
 
+    // The deprecated wrapper must keep behaving as it always did.
+    #[allow(deprecated)]
     #[test]
     fn correlation_intent_parameters_are_not_confused() {
         // AFNI-written: (samples, nfit, nort) kept as is.

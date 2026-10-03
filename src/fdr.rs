@@ -220,6 +220,12 @@ pub struct FdrOptions {
     pub skip_true_positive_adjustment: bool,
     /// z(q) or q for the per-sample output.
     pub output: FdrOutput,
+    /// How samples with exactly equal z(q) are ordered when building a curve
+    /// (see [`fdr_curves`]). `false` (the default) reproduces AFNI's unstable
+    /// quicksort exactly, so curves match AFNI's point for point. `true` orders
+    /// ties by increasing statistic, which is reproducible without reference to
+    /// any particular sort and starts the curve at the smallest tied statistic.
+    pub deterministic_ties: bool,
 }
 
 /// Result of [`fdrize`].
@@ -383,7 +389,7 @@ fn fdrize_core(p: &[f32], options: &FdrOptions) -> Result<Fdrized> {
     // Reasonable p-values only (p < PMAX), raised to the floor PBOT.
     let mut sorted: Vec<(f32, usize)> = Vec::new();
     for (i, &v) in p.iter().enumerate() {
-        if v >= 0.0 && v < P_MAX {
+        if (0.0..P_MAX).contains(&v) {
             sorted.push((v.max(P_BOTTOM as f32), i));
         }
     }
@@ -541,7 +547,7 @@ fn missed_detection_curve(sorted: &[(f32, usize)], nthr: f32, m1: f32) -> Option
     let mut samples = vec![0.0_f32; npp];
     samples[0] = mdf[jbot];
     let mut jj = jbot;
-    for k in 1..npp - 1 {
+    for (k, slot) in samples.iter_mut().enumerate().take(npp - 1).skip(1) {
         let pl = x0 + k as f32 * dpl; // log10(p) of this grid point
         let pv = 10.0_f32.powf(pl);
         while jj < jtop && qq(jj) < pv {
@@ -551,7 +557,7 @@ fn missed_detection_curve(sorted: &[(f32, usize)], nthr: f32, m1: f32) -> Option
         let p1 = f64::from(qq(jj - 1)).log10() as f32;
         let p2 = f64::from(qq(jj)).log10() as f32;
         let pf = (pl - p1) / (p2 - p1);
-        samples[k] = pf * mdf[jj] + (1.0_f32 - pf) * mdf[jj - 1];
+        *slot = pf * mdf[jj] + (1.0_f32 - pf) * mdf[jj - 1];
     }
     samples[npp - 1] = 0.0;
     ThresholdCurve::new(
@@ -618,9 +624,19 @@ pub fn fdr_curves(
             reason: format!("only {nq} samples have a positive z(q); need 9"),
         });
     }
-    pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
-    let z: Vec<f32> = pairs.iter().map(|p| p.0).collect();
-    let t: Vec<f32> = pairs.iter().map(|p| p.1).collect();
+    let (z, t) = if options.deterministic_ties {
+        pairs.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        (
+            pairs.iter().map(|p| p.0).collect::<Vec<f32>>(),
+            pairs.iter().map(|p| p.1).collect::<Vec<f32>>(),
+        )
+    } else {
+        // AFNI's qsort_floatfloat, keyed on z with the statistic as payload.
+        let mut z: Vec<f32> = pairs.iter().map(|p| p.0).collect();
+        let mut t: Vec<f32> = pairs.iter().map(|p| p.1).collect();
+        afni_qsort_float_float(&mut z, &mut t);
+        (z, t)
+    };
 
     // Largest z(q) not beyond the cap: the curve ends one past the last capped value.
     let mut klast = nq - 1;
@@ -669,6 +685,115 @@ pub fn fdr_curves(
         used: fdrized.used,
         true_positives: fdrized.true_positives,
     })
+}
+
+// ---------------------------------------------------------------------------
+// AFNI's sort (cs_sort_ff.c), ported so curves match when z(q) values tie
+// ---------------------------------------------------------------------------
+//
+// Many samples can share exactly the same z(q) (for example every sample on the
+// flat top of the step-up procedure). A quicksort does not keep tied entries in
+// input order, so WHICH statistic ends up first among the tied values depends on
+// the algorithm. To reproduce AFNI's curve exactly this is its algorithm, line
+// for line: median-of-three quicksort with an explicit stack, partitions of 10
+// or fewer left for a final insertion sort.
+
+/// Swap element `i` and `j` in both arrays.
+fn swap_pair(a: &mut [f32], ia: &mut [f32], i: usize, j: usize) {
+    a.swap(i, j);
+    ia.swap(i, j);
+}
+
+/// Sort `a` ascending, carrying `ia` along, exactly as AFNI's
+/// `qsort_floatfloat` does.
+fn afni_qsort_float_float(a: &mut [f32], ia: &mut [f32]) {
+    debug_assert_eq!(a.len(), ia.len());
+    const CUTOFF: isize = 10;
+    let n = a.len() as isize;
+    if n >= CUTOFF.max(3) {
+        let mut stack: Vec<isize> = vec![0, n - 1];
+        while stack.len() >= 2 {
+            let right = stack.pop().expect("stack has right");
+            let left = stack.pop().expect("stack has left");
+            let (l, r) = (left as usize, right as usize);
+            let mid = ((left + right) / 2) as usize;
+            // Order the left, middle and right entries; the middle is the pivot.
+            if a[l] > a[mid] {
+                swap_pair(a, ia, l, mid);
+            }
+            if a[l] > a[r] {
+                swap_pair(a, ia, l, r);
+            }
+            if a[mid] > a[r] {
+                swap_pair(a, ia, r, mid);
+            }
+            let pivot = a[mid];
+            a[mid] = a[r];
+            let pivot_payload = ia[mid];
+            ia[mid] = ia[r];
+            // Partition: scan in from both ends, swapping out-of-place pairs.
+            let (mut i, mut j) = (left, right);
+            loop {
+                loop {
+                    i += 1;
+                    if a[i as usize] >= pivot {
+                        break;
+                    }
+                }
+                loop {
+                    j -= 1;
+                    if a[j as usize] <= pivot {
+                        break;
+                    }
+                }
+                if j <= i {
+                    break;
+                }
+                swap_pair(a, ia, i as usize, j as usize);
+            }
+            // Restore the pivot.
+            a[r] = a[i as usize];
+            a[i as usize] = pivot;
+            ia[r] = ia[i as usize];
+            ia[i as usize] = pivot_payload;
+            // Push the big-enough sub-ranges, shorter one to be handled first.
+            let mut pushed = 0;
+            if i - left > CUTOFF {
+                stack.push(left);
+                stack.push(i - 1);
+                pushed += 1;
+            }
+            if right - i > CUTOFF {
+                stack.push(i + 1);
+                stack.push(right);
+                pushed += 1;
+            }
+            if pushed == 2 {
+                let m = stack.len();
+                if stack[m - 3] - stack[m - 4] > stack[m - 1] - stack[m - 2] {
+                    stack.swap(m - 4, m - 2);
+                    stack.swap(m - 3, m - 1);
+                }
+            }
+        }
+    }
+    // Insertion sort finishes the nearly sorted array (and handles short ones).
+    for j in 1..a.len() {
+        if a[j] < a[j - 1] {
+            let (key, payload) = (a[j], ia[j]);
+            let mut p = j;
+            loop {
+                a[p] = a[p - 1];
+                ia[p] = ia[p - 1];
+                p -= 1;
+                if !(p > 0 && key < a[p - 1]) {
+                    break;
+                }
+            }
+            a[p] = key;
+            ia[p] = payload;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -757,6 +882,49 @@ mod tests {
                 (if rng.next() < 0.5 { -t } else { t }) as f32
             })
             .collect()
+    }
+
+    #[test]
+    fn afni_sort_sorts_and_keeps_pairs_together() {
+        let mut rng = Rng(12345);
+        for n in [0usize, 1, 2, 9, 10, 11, 50, 1000] {
+            // Few distinct keys to force many ties.
+            let keys: Vec<f32> = (0..n).map(|_| (rng.next() * 7.0).floor() as f32).collect();
+            let payload: Vec<f32> = (0..n).map(|i| i as f32).collect();
+            let (mut a, mut ia) = (keys.clone(), payload.clone());
+            afni_qsort_float_float(&mut a, &mut ia);
+            assert!(a.windows(2).all(|w| w[0] <= w[1]), "n={n}: not sorted");
+            // Every payload still sits with its original key.
+            for (k, p) in a.iter().zip(&ia) {
+                assert_eq!(
+                    *k, keys[*p as usize],
+                    "n={n}: payload detached from its key"
+                );
+            }
+            let mut seen = ia.clone();
+            seen.sort_by(f32::total_cmp);
+            assert_eq!(seen, payload, "n={n}: payloads must be a permutation");
+        }
+    }
+
+    #[test]
+    fn deterministic_ties_start_the_curve_at_the_smallest_tied_statistic() {
+        let stats = t_data(6000, 6);
+        let afni = fdr_curves(&t_spec(), &stats, None, &FdrOptions::default()).unwrap();
+        let det = fdr_curves(
+            &t_spec(),
+            &stats,
+            None,
+            &FdrOptions {
+                deterministic_ties: true,
+                ..FdrOptions::default()
+            },
+        )
+        .unwrap();
+        // Same everywhere except where tied z values were ordered differently:
+        // the deterministic curve starts no later than AFNI's.
+        assert!(det.fdr.x0() <= afni.fdr.x0());
+        assert_eq!(det.fdr.len(), afni.fdr.len());
     }
 
     #[test]
@@ -939,7 +1107,7 @@ mod tests {
         for w in c.samples().windows(2) {
             assert!(w[1] >= w[0] - 1e-6, "z(q) curve must not decrease: {w:?}");
         }
-        assert!(c.samples().iter().all(|&z| z >= 0.0 && z <= Z_TOP + 1e-6));
+        assert!(c.samples().iter().all(|z| (0.0..=Z_TOP + 1e-6).contains(z)));
         // Looking a sample's threshold up on the curve reproduces (roughly) its own q.
         let q_opts = FdrOptions {
             output: FdrOutput::QValue,

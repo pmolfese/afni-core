@@ -74,11 +74,18 @@
 //! | [`stat`] | `StatKind` / `StatSpec` (what a statistic *is*) | 1 (math in 2) |
 //! | [`special`] | log-gamma/beta, incomplete beta/gamma, normal tails (in log space) | 2 |
 //! | [`stats`] | Tail-aware p-values and critical values | 2 |
+//! | [`color`] | `Rgba`, color stops, continuous maps, interpolation modes | 4 |
+//! | [`afni_colors`] | AFNI's built-in color scales, exactly | 4 |
+//! | [`composite`] | Alpha compositing (straight alpha) of underlay and overlay planes | 5 |
+//! | [`overlay`] | Overlay evaluation: colors, pass mask, diagnostics | 5 |
+//! | [`cluster`] | Connected-cluster labeling on a surface (SurfClust-compatible) | 6 |
+//! | [`mesh`] | Mesh geometry (normals, areas, volume) and distance searches | 6 |
+//! | [`topology`] | Validated triangle-mesh connectivity, diagnostics, rings | 6 |
+//! | [`threshold`] | Thresholds, transparent thresholding, matched-p transfer | 5 |
 //! | [`fdr`] | FDR/MDF curves, q-values, Benjamini-Hochberg | 3 |
 //! | [`curve`] | Validated FDR/MDF curve tables | 1 (lookups in 3) |
 //! | [`labels`] | Label tables (keys, names, colors) | 1 (colors in 4) |
 //! | *fdr* | FDR/MDF curves and multiple-comparison helpers | 3 |
-//! | *color* | Color maps and label colors | 4 |
 //! | *overlay* | Thresholding, overlay evaluation, compositing | 5 |
 //! | *surface, cluster* | Topology, geometry, surface clustering | 6 |
 //! | *volume* | Voxel neighborhoods and volume clustering | 7 |
@@ -130,7 +137,11 @@
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations)]
 
+pub mod afni_colors;
+pub mod cluster;
+pub mod color;
 pub mod column;
+pub mod composite;
 pub mod curve;
 pub mod dataset;
 pub mod domain;
@@ -138,11 +149,21 @@ pub mod error;
 pub mod fdr;
 pub mod labels;
 pub mod mapping;
+pub mod mesh;
 pub mod numeric;
+pub mod overlay;
 pub mod special;
 pub mod stat;
 pub mod stats;
+pub mod threshold;
+pub mod topology;
 
 // Re-export the two most-used names at the crate root so callers can write
 // `afni_core::Error` instead of `afni_core::error::Error`.
 pub use error::{Error, Result};
+
+// Compile (and run) the Rust example in README.md as a doctest, so the README
+// cannot drift away from the API. Only built under `cargo test`.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;

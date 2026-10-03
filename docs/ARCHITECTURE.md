@@ -122,3 +122,60 @@ to the equivalent `Correl(dof + 1, 1, 0)` at ingest (`StatSpec::from_intent`,
 `IntentOrigin`). `nfit > 1` is a multiple correlation (`R >= 0`, one-sided).
 Conformance: `tests/stats_conformance.rs` against AFNI's `nifticdf` (412 cases at
 full precision), `cdf`, `ccalc`, and `p2dsetstat`.
+
+## 8. FDR and q-values (Phase 3)
+
+`afni_core::fdr` uses stored FDR/MDF curves (`q_value_for_threshold`,
+`threshold_for_q`, `missed_detection_fraction`, `minimum_q`) and builds them from
+data (`fdrize`, `fdr_curves`, a port of `mri_fdrize`/`mri_fdr_curve`). The
+interpolation is AFNI's four-point clamped cubic and inverse
+(`ThresholdCurve::interpolate`, `inverse_interpolate`). p-values
+(`stats::Probability`) and q-values (`fdr::QValue`) are distinct types. A plain
+Benjamini-Hochberg/Yekutieli helper (`benjamini_hochberg`) is kept separate from
+AFNI's algorithm, which floors p, ignores p >= 0.9999, estimates the number of true
+positives, and works in single precision. Conformance: `afni-io/tests/fdr_conformance.rs`
+against `3drefit -addFDR` curves, `3dFDR`, and `fdrval`. The roadmap discovery log
+lists every AFNI quirk that was copied or guarded.
+
+## 9. Colors (Phase 4)
+
+`afni_core::color` holds `Rgba` (f32, straight alpha), `ColorStop`,
+`ContinuousColorMap` (explicit `Interpolation` and `InterpolationSpace`, hard edges
+at duplicate stops, GPU-ready `lookup_table`), and `ColorMap` (continuous or
+labels). `afni_core::afni_colors` reproduces AFNI's nine 256-entry scales exactly
+(`AfniColorScale`), including `DC_spectrum_AJJ`/`ZSS`; golden tables are generated
+from AFNI's own C functions. `afni_core::labels` adds label colors: a
+`LabelColorPolicy` (unlabeled keys, uncolored entries, key 0), the stable fallback
+palette, and `LabelColorMap`. File label tables convert through
+`afni_io::adapt::label_table_to_core` with keys, order and colors preserved.
+
+## 10. Thresholds, overlays and compositing (Phase 5)
+
+`threshold` defines `Threshold` (exact boundary behavior per mode; `AbsoluteAbove`
+and SUMA's `Outside` are distinct because SUMA's own modes disagree at the
+boundary), `FadeModel` (AFNI volume fade with byte rounding and the 222/255
+ceiling; SUMA's surface falloff; a generalized boundary fade), and
+`transfer_threshold` (match p-values across statistics, preserving the tail).
+`overlay` turns data plus an immutable `OverlaySpec` into colors, a pass mask and
+diagnostics (`evaluate_rows`, `evaluate_dataset`); it has no cache or viewer
+state. Colors come from a continuous map, a pane table with SUMA/AFNI lookup rules
+(`ColorTable`, `PaneRule`), or label keys; `GpuOverlayParams` flattens a spec for a
+shader. `composite` layers straight-alpha colors with the Porter-Duff over
+operator. SUMA parity is tested against `ScaleToMap` (54 cases); the roadmap
+discovery log lists what that oracle cannot reach.
+
+## 11. Surface topology, geometry and clustering (Phase 6)
+
+`topology` validates a triangle list and derives neighbors, edges, face neighbors,
+components, ring layers and a diagnostic `TopologyReport` (boundary, non-manifold,
+winding, bow-ties, Euler characteristic); only an out-of-range index or empty node
+set is an error. `mesh` adds coordinates: triangle and node normals (SUMA's
+convention: the normalized sum of unit triangle normals), areas (a third of the
+adjacent triangles per node), bounds, edge lengths, signed volume, and a reusable
+shortest-path `NeighborhoodSearcher`. `cluster` groups active nodes
+(`Connectivity::{EdgeRings, GraphDistance}`, `Tails::{Merged, Separate}`, size limits,
+three sort orders) and returns labels, per-cluster statistics and a `survivor_mask`
+that plugs into `overlay`. `ClusterNeighborhoods` precomputes searches for repeated
+clustering. Conformance is against `SurfaceMetrics`, `SurfMeasures` and `SurfClust`
+(`tests/mesh_conformance.rs`, `tests/cluster_conformance.rs`); the one known
+disagreement (SUMA's millimetre radius search) and its direction are pinned by a test.

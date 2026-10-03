@@ -275,3 +275,63 @@ pub fn assert_round_trip(
         assert_close(&format!("{name} round trip at {x}"), back, x, tol);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Surface fixtures (tests/data/surfaces/)
+// ---------------------------------------------------------------------------
+
+/// Read a FreeSurfer-style ASCII surface (`.asc`): a comment line, `nverts nfaces`,
+/// then one `x y z flag` line per vertex and one `a b c flag` line per triangle.
+pub fn read_asc(name: &str) -> (Vec<[f32; 3]>, Vec<[u32; 3]>) {
+    let text =
+        std::fs::read_to_string(data(&format!("surfaces/{name}.asc"))).expect("read surface");
+    let mut lines = text.lines();
+    lines.next(); // the "#!ascii version" comment
+    let mut counts = lines.next().expect("count line").split_whitespace();
+    let nv: usize = counts.next().unwrap().parse().unwrap();
+    let nf: usize = counts.next().unwrap().parse().unwrap();
+    let vertices = (0..nv)
+        .map(|_| {
+            let w: Vec<f32> = lines
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .take(3)
+                .map(|x| x.parse().unwrap())
+                .collect();
+            [w[0], w[1], w[2]]
+        })
+        .collect();
+    let faces = (0..nf)
+        .map(|_| {
+            let w: Vec<u32> = lines
+                .next()
+                .unwrap()
+                .split_whitespace()
+                .take(3)
+                .map(|x| x.parse().unwrap())
+                .collect();
+            [w[0], w[1], w[2]]
+        })
+        .collect();
+    (vertices, faces)
+}
+
+/// The numeric rows of an AFNI text table (`#` lines and blanks skipped).
+pub fn read_table(relative: &str) -> Vec<Vec<f64>> {
+    std::fs::read_to_string(data(relative))
+        .expect("read table")
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+        .map(|l| {
+            l.split_whitespace()
+                .filter_map(|x| x.parse().ok())
+                .collect()
+        })
+        .collect()
+}
+
+/// One value per line of a `.1D` column.
+pub fn read_column(relative: &str) -> Vec<f64> {
+    read_table(relative).into_iter().map(|r| r[0]).collect()
+}

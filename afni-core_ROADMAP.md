@@ -18,15 +18,17 @@ Status: ✅ done · 🚧 in progress · ⬜ not started
 | 0 | Workspace, dependency direction, and conformance harness | ✅ |
 | 1 | File-neutral domains and datasets | ✅ |
 | 2 | Statistical interpretation and p-values | ✅ |
-| 3 | FDR/MDF curves and multiple-comparison helpers | ⬜ |
-| 4 | Colors, continuous maps, and label tables | ⬜ |
-| 5 | Thresholding, overlay evaluation, and compositing | ⬜ |
-| 6 | Surface topology, geometry metrics, and clustering | ⬜ |
+| 3 | FDR/MDF curves and multiple-comparison helpers | ✅ |
+| 4 | Colors, continuous maps, and label tables | ✅ |
+| 5 | Thresholding, overlay evaluation, and compositing | ✅ |
+| 6 | Surface topology, geometry metrics, and clustering | ✅ |
 | 7 | Volume neighborhoods and clustering | ⬜ |
 | 8 | File-neutral ROI model and operations | ⬜ |
 | 9 | Time-series preprocessing and seed correlation | ⬜ |
 | 10 | Graph, tract, and other derived semantic models | ⬜ |
 | 11 | Consumer migration, performance, and API stabilization | ⬜ |
+
+Open questions awaiting a decision are numbered in [Open decisions](#open-decisions) (none open; D1–D20 are resolved as R6–R25).
 
 ---
 
@@ -252,112 +254,125 @@ interpret it. This phase supplies that missing layer.
 
 ---
 
-## Phase 3 — FDR/MDF curves and multiple-comparison helpers ⬜
+## Phase 3 — FDR/MDF curves and multiple-comparison helpers ✅
 
-- [ ] Move the semantic `ThresholdCurve` into `afni-core` or add a lossless
+- [x] Move the semantic `ThresholdCurve` into `afni-core` or add a lossless
   core equivalent with validated `x0`, nonzero `dx`, and finite samples.
-- [ ] Port AFNI's clamped four-point interpolation from `mri_floatvec.c`
+  (Core has the validated `ThresholdCurve`; `afni-io` keeps its raw, unvalidated
+  one for round trips, with adapters between them.)
+- [x] Port AFNI's clamped four-point interpolation from `mri_floatvec.c`
   exactly. Sumaru currently uses a clamped Catmull–Rom polynomial, which is
   similar but not the same interpolation.
-- [ ] Implement statistic-threshold to `z(q)` and `q`, plus inverse `q` to
+- [x] Implement statistic-threshold to `z(q)` and `q`, plus inverse `q` to
   threshold, matching `thd_fdrcurve.c` edge behavior.
-- [ ] Implement MDF lookup and document that its x-axis is `log10(p)`, unlike
+- [x] Implement MDF lookup and document that its x-axis is `log10(p)`, unlike
   the statistic-threshold x-axis of an FDR curve.
-- [ ] Port and verify sumaru's automatic FDR-curve construction against
+- [x] Port and verify sumaru's automatic FDR-curve construction against
   `mri_fdrize.c`, including ignored zeros/non-finite values, minimum sample
   counts, true-positive estimation, q floors, and the 101-sample curve.
-- [ ] Provide a simple Benjamini-Hochberg helper for callers that have raw
+- [x] Provide a simple Benjamini-Hochberg helper for callers that have raw
   p-values but no stored curve; keep it distinct from AFNI's stored-curve
   algorithm.
-- [ ] Keep p-values and q-values separate in all names and display-facing
+- [x] Keep p-values and q-values separate in all names and display-facing
   results.
-- [ ] Compare interpolation and generated curves point-for-point with AFNI's
-  `fdrval`, `3dFDR`, and committed `FDRCURVE_*` fixtures.
+- [x] Compare interpolation and generated curves point-for-point with AFNI's
+  `fdrval`, `3dFDR`, and committed `FDRCURVE_*` fixtures. Curves match to 1e-5,
+  `3dFDR` z-scores match exactly (difference 0), `fdrval` to its 5 printed digits.
 
 ---
 
-## Phase 4 — Colors, continuous maps, and label tables ⬜
+## Phase 4 — Colors, continuous maps, and label tables ✅
 
-- [ ] Port `Rgba`, `ColorStop`, `ContinuousColorMap`, and label-color lookup
+- [x] Port `Rgba`, `ColorStop`, `ContinuousColorMap`, and label-color lookup
   from `sumaru/src/color.rs` without `anyhow` or viewer dependencies.
-- [ ] Reconcile `afni_io::labels::LabelTable` with the display label table:
+- [x] Reconcile `afni_io::labels::LabelTable` with the display label table:
   preserve file order and attributes in I/O, while core provides validated
   keys, names, optional colors, lookup, and fallback policies.
-- [ ] Port AFNI's built-in color maps exactly, including byte endpoints and
-  central gaps: `DC_spectrum_AJJ`, `DC_spectrum_ZSS`, and `display.c` bigmaps.
-- [ ] Add explicit interpolation modes (continuous, stepped/direct, nearest)
+- [x] Port AFNI's built-in color maps exactly, including byte endpoints and
+  central gaps (all nine `display.c` scales at five sizes, byte for byte): `DC_spectrum_AJJ`, `DC_spectrum_ZSS`, and `display.c` bigmaps.
+- [x] Add explicit interpolation modes (continuous, stepped/direct, nearest)
   and define duplicate-stop behavior.
-- [ ] Define whether interpolation occurs in encoded RGB or linear-light RGB;
+- [x] Define whether interpolation occurs in encoded RGB or linear-light RGB;
   use AFNI/SUMA encoded-RGB behavior for parity and name any perceptual option
   separately.
-- [ ] Port stable fallback label colors, key-zero/unlabeled policy, alpha
+- [x] Port stable fallback label colors, key-zero/unlabeled policy, alpha
   handling, brightness scaling, and NaN/missing colors.
-- [ ] Support building a color map from AFNI/SUMA label tables without losing
+- [x] Support building a color map from AFNI/SUMA label tables without losing
   integer keys or silently quantizing colors.
-- [ ] Generate compact golden tables from AFNI for every built-in map and test
-  all 256 entries where AFNI uses a 256-entry map.
+- [x] Generate compact golden tables from AFNI for every built-in map and test
+  all 256 entries where AFNI uses a 256-entry map. (Tables come from AFNI's own
+  C functions, extracted verbatim; see the discovery log for why not the binary.)
 
 ---
 
-## Phase 5 — Thresholding, overlay evaluation, and compositing ⬜
+## Phase 5 — Thresholding, overlay evaluation, and compositing ✅
 
 Port the pure parts of `sumaru/src/overlay.rs`; do not port viewer caches or
 GPU resources as core state.
 
-- [ ] Define a validated `Threshold` with Off, Above, Below, Between, and
+- [x] Define a validated `Threshold` with Off, Above, Below, Between, and
   Outside modes, including exact inclusive-boundary behavior.
-- [ ] Represent symmetric/absolute thresholding explicitly instead of relying
+- [x] Represent symmetric/absolute thresholding explicitly instead of relying
   on callers to manufacture `[-T, T]` ranges.
-- [ ] Define range selection (recorded/computed auto range versus manual),
+- [x] Define range selection (recorded/computed auto range versus manual),
   symmetric intensity ranges, clipping, zero display, opacity, brightness
   columns, and missing/non-finite policies.
-- [ ] Define `OverlaySpec` as immutable display intent and return an
+- [x] Define `OverlaySpec` as immutable display intent and return an
   `OverlayEvaluation` containing colors, pass/fail mask, and diagnostics.
   Consumers may cache it; the core model should not hide invalidation inside a
   mutable viewer cache.
-- [ ] Port continuous and discrete-label mapping, sparse row-to-sample
+- [x] Port continuous and discrete-label mapping, sparse row-to-sample
   expansion, brightness modulation, threshold mask modes, and cluster masking.
-- [ ] Separate AFNI-compatible fade behavior from sumaru enhancements such as
+- [x] Separate AFNI-compatible fade behavior from sumaru enhancements such as
   desaturation, darkening, and saturation boost.
-- [ ] Add pure alpha compositing for anatomical underlay, ordered overlay
+- [x] Add pure alpha compositing for anatomical underlay, ordered overlay
   planes, live RGBA overlays, and ROI annotations. Specify straight versus
   premultiplied alpha.
-- [ ] Add threshold transfer by matched p-value as a core helper: preserve the
+- [x] Add threshold transfer by matched p-value as a core helper: preserve the
   source tail choice and convert through the destination `StatSpec`.
-- [ ] Produce GPU-ready lookup tables/uniform values, but keep shader code and
+- [x] Produce GPU-ready lookup tables/uniform values, but keep shader code and
   buffers in the viewer.
 - [ ] Test CPU evaluation against SUMA for threshold modes, `shw_0`, intensity
   clipping, brightness, direct color mapping, and alpha. Then use the same
-  cases as shader conformance tests in each viewer.
+  cases as shader conformance tests in each viewer. **Partly done:** 54 cases
+  replayed against SUMA's own mapping code (`ScaleToMap`) cover interpolated,
+  banded and direct mapping, clipping, auto range, mask ranges, `shw_0`-style zero
+  masking and the brightness factor, node by node. Threshold-mode boundaries and
+  both alpha-fade formulas are checked against the C source by unit tests, NOT
+  against a running SUMA/AFNI (no command-line path exercises them). The committed
+  `scaletomap.ref` is ready to be reused as the shader conformance set.
 
 ---
 
-## Phase 6 — Surface topology, geometry metrics, and clustering ⬜
+## Phase 6 — Surface topology, geometry metrics, and clustering ✅
 
 Surface clustering currently depends on substantial reusable work in
 `sumaru/src/surface.rs`. Extract that foundation before moving the cluster
 algorithm.
 
-- [ ] Define a validated triangle topology: node/face counts, node neighbors,
+- [x] Define a validated triangle topology: node/face counts, node neighbors,
   face neighbors, edges, boundary/non-manifold diagnostics, and stable topology
   identity.
-- [ ] Compute face normals, vertex normals, face areas, per-node areas, total
+- [x] Compute face normals, vertex normals, face areas, per-node areas, total
   area, bounds, and edge lengths without a graphics dependency.
-- [ ] Provide connected components, ring neighborhoods, and bounded geodesic
+- [x] Provide connected components, ring neighborhoods, and bounded geodesic
   graph searches reusable by clustering and ROI tools.
-- [ ] Port `ClusterParams`, `ClusterInput`, `ClusterLabels`, and summaries from
+- [x] Port `ClusterParams`, `ClusterInput`, `ClusterLabels`, and summaries from
   `sumaru/src/cluster.rs`.
-- [ ] Support minimum node count and minimum surface area, edge-ring and
+- [x] Support minimum node count and minimum surface area, edge-ring and
   millimeter-radius connectivity, largest-first labels, and deterministic tie
   breaking.
-- [ ] Keep positive and negative tails separate when requested. Document that
+- [x] Keep positive and negative tails separate when requested. Document that
   sumaru's bisided behavior intentionally differs from `SurfClust`, which can
   merge touching opposite signs after masking.
-- [ ] Add peak node/value, min/max, area, node count, centroid/center of mass,
+- [x] Add peak node/value, min/max, area, node count, centroid/center of mass,
   and optional coordinate summaries useful to viewers and reports.
-- [ ] Compare against `SurfClust` for every mode it can express and retain
-  separate tests for corrected bisided semantics.
-- [ ] Benchmark wide ring/radius searches; precompute reusable neighborhoods
+- [x] Compare against `SurfClust` for every mode it can express and retain
+  separate tests for corrected bisided semantics. (22 runs: every edge-ring case
+  matches exactly, rank by rank on the irregular mesh and as a set on the regular
+  one; five of six millimetre cases match; the sixth differs in a documented
+  direction. Central-node columns are not computed.)
+- [x] Benchmark wide ring/radius searches; precompute reusable neighborhoods
   or weighted adjacency when repeated interactive clustering warrants it.
 
 ---
@@ -505,6 +520,45 @@ increments.
 
 ---
 
+## Open decisions
+
+None open. D1–D20 were all decided on 2026-10-02 and are recorded below as R6–R25 (IDs are
+never reused). New questions get the next free `D` number and a short context / pros / cons
+entry here. Standing constraint from the owner: sumaru behavior is not to change for now, so
+sumaru-facing items were deferred. "Deferred" entries stay valid and can be reopened.
+
+### Resolved
+
+| ID | Phase | Decision | Where recorded |
+|----|-------|----------|----------------|
+| R1 | 1 | Keep a file's representation: an index list of 0..n-1 stays indexed (not collapsed to dense). | Phase 1 |
+| R2 | 1 | Add NaN-aware equality (`eq_nan_aware`) alongside IEEE `==`. | Phase 1 |
+| R3 | 1 | Malformed FDR/MDF curves: error by default, `SkipWithWarning` on request. | Phase 1 |
+| R4 | 2 | Implement the deferred noncentral t, F and chi-square exactly. | Phase 2 (noncentral) |
+| R5 | 2 | Correlation in files: classify by structure, error on malformed headers, allow an explicit writer override. | Phase 2 (correlation in files) |
+| R6 | 2 | (was D1) Deprecate, with a warning but keep, the lenient `Option`-returning stat APIs. Done: `StatSpec::from_nifti_intent` and `afni-io`'s `DataArray::stat` carry `#[deprecated]`. | Phase 2 (lenient intent APIs) |
+| R7 | 3 | (was D2) New FDR curves default to AFNI's exact tie order. | Phase 3 (tie order) |
+| R8 | 3 | (was D3) Below the curve's range, take max abs(stat) from the data, not from stored statistics. | Phase 3 (max abs stat) |
+| R9 | 3 | (was D4) Skip `3dFDR -old`. | Phase 3 (extended statistics) |
+| R10 | 3 | (was D5) Keep the `fdr` fixture dump files for now. | Phase 3 (fixtures) |
+| R11 | 4 | (was D7) Port SUMA's named colormaps, verify them against AFNI, and label sumaru's three non-AFNI maps (`fire`, `afni_p2_spanned`, `amber_monochrome`) as sumaru's own. Implementation pending (Phase 11 or earlier). | Phase 4 (not AFNI definitions) |
+| R12 | 4 | (was D8) `afni-io` depends on `afni-core` through a git dependency tracking `main` for now; move to tagged releases later. Implementation pending: edit `afni-io/Cargo.toml` and document a `[patch]` override for local work. | Phase 4 (building afni-io alone) |
+| R13 | 5 | (was D10) A NaN threshold value is hidden by default; `MissingThreshold::Show` gives AFNI parity. | Phase 5 (non-finite threshold values) |
+| R14 | 6 | (was D18) Add an absolute-value-weighted center of mass as a separate field; keep SurfClust's signed one. Implementation pending. | Phase 6 (center of mass is fragile) |
+| R15 | 4 | (was D6) Strict IEEE bytes are "AFNI's" color scale; the one-byte FMA difference stays documented. | Phase 4 (platform-dependent bytes) |
+| R16 | 5 | (was D9) Deferred: keep core's `Outside` and `AbsoluteAbove` as they are; sumaru migrates later. | Phase 5 (thresholds disagree about their own boundary) |
+| R17 | 5 | (was D11) Deferred: sumaru keeps its continuous stops; core offers both models. | Phase 5 (panes are not N stops at i/(N-1)) |
+| R18 | 5 | (was D12) Deferred: sumaru's fade is unchanged; core offers `FadeModel::Afni`/`Suma` separately. | Phase 5 (alpha fades: AFNI and SUMA are different formulas) |
+| R19 | 5 | (was D13) Left as is (negative values transparent under `Above`) until the Phase 11 check against AFNI. Revisit then. | Phase 5 (unpinned: AFNI's one-sided fade) |
+| R20 | 5 | (was D14) Deferred: no non-linear colormap type until a map needs it. | Phase 5 (what ScaleToMap does and does not cover) |
+| R21 | 6 | (was D15) Keep true shortest-path radius; no SUMA-compatible mode. Core is correct. | Phase 6 (SUMA's millimetre radius is not graph distance) |
+| R22 | 6 | (was D16) Two-sided clustering keeps positive and negative clusters separate (`Separate`, sumaru's behavior). Core's current default of `Merged` (SurfClust) is unchanged; callers choose `Separate` explicitly. | Phase 6 (sumaru migration) |
+| R23 | 6 | (was D17) Keep SurfClust's seed and tie order. | Phase 6 (SurfClust quirks) |
+| R24 | 6 | (was D19) Deferred: no central-node columns. | Phase 6 (not covered) |
+| R25 | 6 | (was D20) `TopologyId` stays triangle-order sensitive. | Phase 6 (topology decisions) |
+
+---
+
 ## Discovery log
 
 - **2026-10-02 · Planning.** `afni-io` already reads all 23 AFNI/NIfTI
@@ -621,3 +675,282 @@ increments.
   (`statistics: SkipWithWarning`). A correlation with `nfit > 1`, which AFNI
   does write (for example `Correl(30,2,1)`), is a multiple correlation and is
   one-sided.
+- **2026-10-02 · Phase 3.** AFNI's stored-curve algorithms are in single precision
+  and depend on details that are easy to lose. Reproduced on purpose: `f32`
+  arrays, p floored at `1e-15` and rounded to `f32`, `qsmal`/`m1`/`qfac` logic,
+  `0.1666667` (not 1/6) in the cubic weights, and AFNI's own quicksort. With all
+  of that ported, `3dFDR` z-scores match with a worst difference of exactly 0.
+- **2026-10-02 · Phase 3 (tie order).** Many samples share exactly the same z(q)
+  (the flat top of the step-up procedure), and AFNI's unstable quicksort then
+  decides which statistic starts the curve (`x0`, and so every sample position,
+  shifts by up to ~1e-3 relative). A stable or sorted-by-statistic order gave
+  `x0 = 0.000391` where AFNI has `0.000473`. `cs_sort_ff.c` is now ported line for
+  line (`afni_qsort_float_float`) and is the default; `deterministic_ties: true`
+  gives the reproducible ordering instead. **Decide later** whether new curves
+  should default to the deterministic order.
+- **2026-10-02 · Phase 3 (AFNI quirks copied, flagged for review).**
+  (a) `interp_floatvec` returns the first sample for every `x` when the curve has
+  only two samples (`itop <= 1`); copied.
+  (b) `estimate_m1` bins `(int)((p - 0.15) * 20)`, which truncates toward zero, so
+  p in (0.10, 0.15) is counted in bin 0 although the comment says 0.15..0.95;
+  copied.
+  (c) `qsmal` uses 0 as "unset", so a first small q found at rank 0 is lost;
+  harmless in practice, copied.
+  (d) `mri_fdr_curve` divides by `t2 - t1`, which is 0 only for a degenerate
+  curve (all statistics equal); guarded here (fraction 0), AFNI would produce NaN.
+  (e) `interp_inverse_floatvec` divides by `yp - ym` on a flat segment equal to
+  `y`; guarded (left end).
+  (f) `student_t2p` returns p = 1 for `dof < 1`; afni-core evaluates it.
+- **2026-10-02 · Phase 3 (fdrval edge behaviour).** `fdrval -qinput` replaces
+  `q <= 0` by `1e-9` and `q >= 1` by `0.99999` and nothing else, so `q = 1e-12`
+  is *not* clamped. afni-core's `threshold_for_q` takes `q` in `(0, 1]` and treats
+  `q = 0` as an error (infinite z) and `q = 1` as threshold 0. A first draft of
+  the conformance test clamped `q < 1e-9` and failed, which is how this was found.
+- **2026-10-02 · Phase 3 (max |stat|).** For a q below the curve's range AFNI uses
+  `DSET_BSTAT_MAXABS`, the stored brick maximum. afni-core computes it from the
+  column values (`DataColumn::threshold_for_q`), which can differ if a file's
+  stored statistics are stale. Revisit if this shows up.
+- **2026-10-02 · Phase 3 (extended statistics).** AFNI builds FDR curves only for
+  the classic codes 2-10 (`FUNC_IS_STAT`). afni-core does the same by default and
+  requires an explicit `FdrOptions::tail` for any other kind rather than
+  inheriting an undefined AFNI rule. `3dFDR -old` (`flags & 1`: count p = 1
+  voxels, skip the m0 correction) is **not** ported.
+- **2026-10-02 · Phase 3 (fixtures).** AFNI's own `p2t` functions return sentinel
+  statistics (`99.99` for t, `999.99` for F) for p below about 1e-6 to 1e-4, so the
+  random fixture `fdr+orig` contains a few voxels at those values; they exercise
+  the `1e-15` p floor and the z cap and are kept. The fixture data come from
+  `jRandomDataset`, so regenerating `make_volume_fixtures.sh` changes the data and
+  every reference derived from it together (documented in the script). The new
+  fixtures add about 0.9 MB to afni-io's `tests/data` (the per-voxel dumps are the
+  bulk; drop them if repository size matters).
+- **2026-10-02 · Phase 3 (sumaru migration).** `sumaru`'s `AfniFdrCurve::from_statistics`
+  follows the same outline but differs in ways that will change numbers when it is
+  replaced: `f64` throughout, stable sorting (so different tie order and `x0`), no
+  MDF curve, p not rounded to `f32`, and Catmull-Rom interpolation. Re-run its
+  tests against `afni_core::fdr` and expect small, explainable differences.
+- **2026-10-02 · Phase 3 (performance, for Phase 11).** `fdrize` evaluates one
+  incomplete-beta p-value per sample (via `PValueEvaluator`); a 1e6-voxel map was
+  not benchmarked. The sort, histogram and z(q) conversion are linear or
+  `n log n`. Benchmark before wiring it to an interactive slider.
+- **2026-10-02 · Phase 3 (process note).** A scratch cleanup using `rm -f *` was
+  refused by the environment's safety check, so the fixture trial used fresh
+  directories instead; nothing in the repository was affected.
+- **2026-10-02 · Phase 4 (platform-dependent bytes).** AFNI's colorscale code is
+  floating-point and platform sensitive. Compiled with clang's default
+  `-ffp-contract=on` (fused multiply-add, the default on Apple silicon), six
+  entries across 45 scale/size combinations differ by one byte from strict IEEE
+  arithmetic, always at the 0/360-degree hue wrap where `60 - ii*(60/(n/2-1))`
+  lands on `-7e-15` instead of `0`: `[255,0,11]` versus `[255,11,0]` (for example
+  `Reds_and_Blues` at 64 entries, index 31). They occur only at sizes other than
+  AFNI's 256 default (and 128). The golden file uses strict IEEE
+  (`-ffp-contract=off`), which is what Rust computes and what any compiler without
+  FMA produces. **Open question:** which behavior should be the "AFNI" one, given
+  that an M-series AFNI build shows the FMA bytes at non-default sizes.
+- **2026-10-02 · Phase 4 (golden tables are not from the binary).** `display.c`
+  needs X11/Motif and the bigmaps are not exposed by any command-line tool
+  (`MakeColorMap`/`ScaleToMap` serve SUMA's own named maps, a different list).
+  The golden tables are therefore produced by compiling the exact AFNI functions
+  (`mypow`, `DC_spectrum_AJJ`, `DC_spectrum_ZSS`, `NJ_bigmaps_init` and the macros
+  they use) extracted from the source tree by `regenerate_afni_colorscales.sh`.
+  It proves the port matches the *source*; it does not prove the shipped binary was
+  built from that source.
+- **2026-10-02 · Phase 4 (AFNI quirks copied).** (a) AFNI's `pow` is
+  `exp(y*log(x))` with 0 for `x <= 0`, and channels are `(int)(255*pow + 0.5)`;
+  ported exactly, because the math library's `pow` can differ by a byte.
+  (b) `Reds_and_Blues` subtracts `NBIG_MTOP + 1` (not the half-way point) in its
+  upper half, so its first upper entries use a negative offset and start above 240
+  degrees. (c) `Reds_and_Blues_w_Green` paints only two entries (`n/2-1`, `n/2`)
+  green; sumaru widened that band to eight so it stays visible, which is a viewer
+  choice and is *not* in afni-core. (d) `DC_spectrum_AJJ` uses `s` where its mirror
+  branch uses `sb` for the blue ramp; both are 250.
+- **2026-10-02 · Phase 4 (orientation).** AFNI stores a color bar with index 0 at
+  the TOP (the highest value). `AfniColorScale::table` keeps that order so it can be
+  compared byte for byte; `to_color_map` flips it so position 0 is the lowest value.
+  sumaru's `spectrum_red_to_blue` already used the flipped orientation.
+- **2026-10-02 · Phase 4 (not AFNI definitions).** sumaru's `blue_white_red`,
+  `fire`, `grayscale`, `afni_p2_spanned` and `amber_monochrome` were *not* ported:
+  none is a `display.c` bigmap, and the provenance of `afni_p2_spanned` and `fire`
+  is unclear (the stops look hand-chosen). `amber_monochrome` is attributed to
+  `pbardefs.h` and should be checked against it. Only a plain grayscale ramp is in
+  core, marked as not AFNI's. SUMA's own named colormaps (`RGYBR20`, `bgyr19`,
+  `ngray20`, ... from `SUMA_Color.c`) are a separate list and are **not** yet
+  ported; do that if the viewers need them.
+- **2026-10-02 · Phase 4 (label colors).** The stable fallback palette (ten colors,
+  key 0 gray, `|key|-1 mod 10`) is a sumaru design, not AFNI's; it is kept because
+  both viewers need distinguishable regions for datasets with no table, but is
+  named and documented as such. Unlabeled keys are transparent by default (as in
+  sumaru). A label dataset's table colors come back bit-for-bit (colors read from
+  8-bit data are `value/255`; nothing is re-quantized), and duplicate keys in a
+  file are an error rather than a silent merge. sumaru's label keys were `i32`;
+  core uses `i64`.
+- **2026-10-02 · Phase 4 (interpolation decisions to confirm).** Interpolation
+  defaults to encoded RGB, as AFNI/SUMA do. A linear-light option exists and is
+  named as such. Duplicate stops make a hard edge, and at the exact shared position
+  the *earlier* stop wins; sumaru's loop behaves the same, now stated and tested.
+  `Stepped` takes the stop at or below the position, which is how an N-pane color
+  bar behaves, but AFNI's exact value-to-pane rule (the index arithmetic in the
+  pbar code) is **not** ported; Phase 5 must pin it against SUMA before overlays
+  claim parity.
+- **2026-10-02 · Phase 4 (building afni-io alone).** `afni-io` now depends on
+  `afni-core` by relative path (`../afni-core`), and the two repositories are
+  published separately. Until `afni-io` points at a git or registry dependency, a
+  fresh clone of `afni-io` does not build; both must be checked out side by side.
+  The published `afni-io` (at its "phase 6" commit) does not yet have the
+  dependency, so this bites when the adapter work is committed. **Decide:** a git
+  dependency in `afni-io/Cargo.toml`, publishing `afni-core`, or a workspace.
+- **2026-10-02 · Phase 5 (thresholds disagree about their own boundary).** SUMA's
+  modes are not consistent: `ABS_LESS_THAN` hides `-t < v < t` strictly, so
+  `|v| = t` PASSES, while `OUTSIDE_RANGE` hides `[lo, hi]` inclusively, so the ends
+  FAIL. sumaru's single `Outside` mode passes the ends (`v <= min || v >= max`),
+  which is SUMA's absolute mode, not SUMA's outside-range mode. Core has both,
+  honestly named (`AbsoluteAbove`, `Outside`) and tested at the boundary; sumaru's
+  `Outside(-T, T)` should migrate to `AbsoluteAbove(T)`. SUMA's `LESS_THAN` is in
+  fact "show `v >= t`" (`Above`); `Below` exists only in sumaru and is kept.
+- **2026-10-02 · Phase 5 (non-finite threshold values).** AFNI and SUMA test
+  thresholds with `<`/`>`, which are false for NaN, so a sample whose THRESHOLD value
+  is NaN is never hidden and is drawn at full strength. Core hides it by default and
+  offers `MissingThreshold::Show` to reproduce the reference programs. An
+  intensity that is NaN is a different case (AFNI casts it to `int`, which is
+  undefined behavior in C; SUMA never gets that far); core gives it a configurable
+  `missing_color` (transparent by default; sumaru used gray 0.35).
+- **2026-10-02 · Phase 5 (panes are not N stops at i/(N-1)).** SUMA places color `i`
+  of an `N`-color map at `i/N` of the range and holds the last color from `(N-1)/N`
+  to the top (`Vscl = p * N`, mix `i` with `i + 1`). A continuous map with `N` stops
+  at `i/(N-1)` (what sumaru builds from a 256-entry AFNI table) differs by up to
+  1/256 of the range. Core keeps both: `ContinuousColorMap` for general gradients and
+  `ColorTable` + `PaneRule` for SUMA/AFNI parity. sumaru's overlay should use panes
+  for the AFNI scales to match SUMA exactly.
+- **2026-10-02 · Phase 5 (AFNI volumes index panes from the top).** AFNI's volume
+  overlay uses `j = (int)(N/(top-bot) * (top - v))` from the top of the bar, SUMA's
+  `i = (int)((v-bot)/(top-bot) * N)` from the bottom. They agree except exactly on a
+  pane boundary, where AFNI lands one pane lower. Both are implemented
+  (`PaneRule::AfniBanded`, `SumaBanded`) and the difference is a unit test. All of
+  this arithmetic is `f32` because the references are `float`.
+- **2026-10-02 · Phase 5 (alpha fades: AFNI and SUMA are different formulas).**
+  AFNI (`AFNI_newnewfunc_overlay`): `255*((1-floor)*|v|/t)^k + 255*floor` as a byte,
+  `rintf` (ties to even), CLAMPED TO 222, v == 0 rejected. SUMA
+  (`alphaOpacitiesForOverlay`): `min(1, |v|/t)`, squared if quadratic; no byte, no
+  222 cap, no floor, and it uses only `ThreshRange[0]`. Both are modeled
+  (`FadeModel::Afni`, `Suma`); sumaru's cubic/quartic curves, `max_alpha`,
+  desaturate/darken/boost are NOT AFNI and live in `FadeCurve::{Cubic,Quartic}` and
+  `FadeStyle`, separate from the AFNI behavior. sumaru's default (`max_alpha` 0.85,
+  desaturate 0.5, darken 0.35) is therefore a viewer style, not "AFNI-compatible".
+- **2026-10-02 · Phase 5 (unpinned: AFNI's one-sided fade).** For `Above(t)` AFNI
+  fades `0 < v < t`, rejects `v == 0`, and (with `thb = 0`) neither fades nor rejects a
+  NEGATIVE threshold value, which then draws opaque unless the separate positive-only
+  flag hides it. Core makes negative values transparent for `Above`. Whether that
+  matches the GUI could not be established without running it. Revisit with
+  DriveSuma/AFNI GUI automation in Phase 11.
+- **2026-10-02 · Phase 5 (what ScaleToMap does and does not cover).** The 54
+  reference cases pass exactly, but the CLI itself is narrower than the library:
+  `-br` is limited to `(0, 1]` (the library allows `(0, 2]`; factors above 1 are unit
+  tested only), zeros are masked by default, the default mask color is black unless
+  `-msk` is given (the documented 0.3 applies only then), and `-apr` runs a
+  separate function (`SUMA_ScaleToMap_alaAFNI`) that has the same arithmetic. NOT
+  covered: color maps with per-color fractions (non-equal panes,
+  `SUMA_Linearize_Color_Map`), `-anr`, `-perc_clp`, `top_frac`, "no color" rows
+  (`-1 -1 -1`), and SUMA's coordinate-bias and contouring options. Those need a
+  non-linear colormap type that core does not have yet.
+- **2026-10-02 · Phase 5 (smaller notes).** (a) `Rgba::scaled_clamped` is an inherent
+  method defined in `overlay.rs`, away from the other `Rgba` code; move it into
+  `color.rs` when convenient. (b) Brightness modulation can push channels outside
+  0..1 for factors above 1 or below 0; SUMA leaves that to the GL clamp, core clamps
+  immediately. (c) `FadeStyle::max_alpha` is a sumaru ceiling applied to the factor
+  for ANY fade model, so combining it with `FadeModel::Afni` gives min(222/255, cap).
+  (d) The conformance fixture was easy to get wrong: the first `ScaleToMap` run
+  produced empty cases because `-br 1.5` is rejected by the CLI and `set -e` hid it;
+  the script now records an empty case instead of aborting, and the test asserts all
+  54 cases are populated.
+- **2026-10-02 · Phase 6 (SUMA's millimetre radius is not graph distance).**
+  `SurfClust -rmm r` (r > 0) calls `SUMA_getoffsets2`, which builds breadth-first
+  LAYERS and gives each node a distance through the previous layer. Its precursor
+  selection looks buggy: it initializes `n_prec` to the node's first neighbor, then
+  compares `OffVect[n_prec] + Seg` where `Seg` is a SQUARED length against a running
+  minimum that mixes squared lengths and distances, so the stored distance is not the
+  minimum and is usually too large. Effect: SUMA connects FEWER nodes than a true
+  shortest-path search. Measured on the irregular 642-node sphere with
+  `-athresh 2.2`: at `-rmm 14` SurfClust finds 35 clusters, true graph distance 32
+  (and a simple corrected layered search also 32); at 6 and 9 mm and on the regular
+  sphere at 8 mm they agree exactly. Exact parity would require reproducing the quirk,
+  which also depends on SUMA's (unspecified) neighbor ordering, so afni-core uses true
+  Dijkstra distances and the conformance test expects exactly this one disagreement
+  and its direction (afni-core never finds MORE clusters). Decide whether a
+  "SUMA-compatible radius" mode is worth the effort.
+- **2026-10-02 · Phase 6 (edge rings match exactly).** `-rmm -N` (N edge layers)
+  has none of that ambiguity: every ring case matches SurfClust in cluster count,
+  node counts, areas, means, extremes and their nodes, variance, standard error,
+  centroid and center of mass.
+- **2026-10-02 · Phase 6 (tie order depends on float noise).** SurfClust sorts
+  clusters by area with a stable selection sort, so equal areas keep discovery order,
+  but on a REGULAR mesh many clusters have mathematically equal areas whose
+  single-precision sums differ in the last bit, and that noise decides their order.
+  It cannot be reproduced. afni-core sorts stably in discovery order (f64 sums over
+  ascending members), and the regular-mesh conformance cases are compared as sets;
+  on the irregular mesh the rank order matches exactly.
+- **2026-10-02 · Phase 6 (SurfClust quirks).** (a) A node whose VALUE is exactly 0 is
+  inactive whatever the threshold says; core makes that
+  `exclude_zero_values` (off by default, on in the conformance cases). (b) Clusters
+  start from the HIGHEST node index downward (the seed scan has no `break`), which
+  fixes discovery order, tie order and `-sort_none` order; core copies it and
+  records `seed_node`. (c) A negative `-amm2` with no `-n` means "at least that many
+  nodes" and is mapped. (d) The help text names `-ir_range` but the program accepts
+  `-in_range`. (e) Extremes ties go to the first-discovered node in SUMA and to the
+  lowest node number here; the test data avoid exact ties.
+- **2026-10-02 · Phase 6 (thresholds confirmed).** SurfClust's `-thresh` (`>=`),
+  `-athresh` (`|v| >=`, boundary passes), `-in_range` (inclusive) and `-ex_range`
+  (`v < lo || v > hi`, boundary fails) match `Threshold::{Above, AbsoluteAbove,
+  Between, Outside}` exactly, which independently confirms the Phase 5 boundary
+  rules (the live program had not been usable for that before).
+- **2026-10-02 · Phase 6 (geometry conventions pinned).** Against `SurfaceMetrics`
+  and `SurfMeasures`: triangle normal `(v1-v0)x(v2-v0)` (outward for the usual
+  winding); NODE normal is the normalized sum of UNIT triangle normals, which was
+  distinguished from area-weighted (differs by up to ~0.7 on the irregular mesh) and
+  angle-weighted; node area is one third of the adjacent triangle areas. SUMA works
+  in `float`, so areas agree to about 1e-6 relative and the tolerances are those of
+  the reference.
+- **2026-10-02 · Phase 6 (center of mass is fragile).** SurfClust's center of mass is
+  `sum(v xyz)/sum(v)` with signed values, so a cluster whose values nearly cancel gives
+  an absurd position (coordinates near -900 on a 50 mm sphere in the test data) and an
+  exactly zero sum gives NaN here. This is SurfClust's definition and is reproduced;
+  weighting by `|v|` would be more useful and could be offered as a separate field.
+- **2026-10-02 · Phase 6 (not covered).** SurfClust's central-node and
+  weighted-central-node columns (run with `-no_cent`; slow in SUMA) are not
+  computed. File-writing options (`-out_roidset`, `-out_clusterdset`, `-out_fulllist`,
+  `-prepend_node_index`) are I/O concerns. `-thresh_col` (threshold from another
+  column) is supported by the API (`ClusterInput::tail_values`, the caller applies the
+  threshold) but is not exercised against the live program. SurfClust prints 2-3
+  decimals, which limits how tightly values can be compared.
+- **2026-10-02 · Phase 6 (sumaru migration).** sumaru's `cluster.rs` differs in ways
+  that will change results or speed: its default is bisided (core's default is
+  `Merged`, SurfClust's); it chooses ONE size metric (area or nodes) where SurfClust
+  applies both limits; it starts seeds from the LOWEST node index; it allocates an
+  `O(nodes)` distance array per search and uses `Vec::contains` in its ring search
+  (quadratic overall); and `surfclust_command` builds a command string, which is
+  consumer tooling and was not ported. Node areas there were `f32`.
+- **2026-10-02 · Phase 6 (topology decisions).** Only an empty node set or an
+  out-of-range index is an error; degenerate, duplicate, non-manifold,
+  inconsistently wound and bow-tie defects are REPORTED so a viewer can still open a
+  damaged mesh (`require_clean` is the strict form). `TopologyId` is an FNV-1a hash of
+  the node count and triangle list IN ORDER: reordering triangles changes it. Decide
+  whether an order-independent identity is wanted. Bow-tie detection is quadratic in
+  node degree (fine for meshes, noted).
+- **2026-10-02 · Phase 6 (benchmark, release build, 2026-10-02, Apple silicon).**
+  One clustering with neighborhoods computed on demand, then a cache built once and 20
+  re-clusterings (about a third of the nodes active):
+  nodes 40,962 | 1 ring 2.0 ms | 3 rings 21 ms | 6 rings 46 ms | radius 2 edges 7 ms |
+  radius 5 edges 42 ms. Building the full cache costs about 2x one on-demand run, then
+  each cached run is about 1/10 of an on-demand run for wide settings, so the cache
+  pays off after roughly three re-runs; for 1 ring it is never worth it. Smaller meshes
+  scale linearly (2,562 nodes: 0.3 to 4 ms). The earlier concern that sumaru's search
+  would be quadratic is removed by the reusable `NeighborhoodSearcher`.
+- **2026-10-02 · Phase 6 (a Phase 5 diagnostic corrected).** The integration test
+  tying clusters to overlays showed `OverlayDiagnostics::rejected_by_cluster` counted
+  every non-surviving row, including rows already hidden for failing the threshold.
+  It now counts only rows that PASSED the threshold and lost their cluster (documented
+  on the field).
+- **2026-10-02 · Phase 2 (lenient intent APIs).** `afni_io::gifti::DataArray::stat()` and
+  `afni_core::stat::StatSpec::from_nifti_intent` return `Option`, so a malformed
+  correlation looks the same as "not a statistic". The checked forms
+  (`DataArray::stat_with_origin`, `Volume::stats_with_origin`, `StatSpec::from_intent`)
+  report the problem. The lenient ones are kept only so callers that cannot surface an
+  error keep compiling; decide whether to deprecate them.

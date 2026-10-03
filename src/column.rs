@@ -430,6 +430,38 @@ impl DataColumn {
             && self.values.eq_nan_aware(&other.values)
     }
 
+    /// The FDR q-value at `threshold` (an absolute statistic), from this column's
+    /// stored FDR curve; `None` if the column has no curve. See
+    /// [`crate::fdr::q_value_for_threshold`].
+    pub fn q_for_threshold(&self, threshold: f64) -> Option<Result<crate::fdr::QValue>> {
+        self.fdr_curve
+            .as_ref()
+            .map(|c| crate::fdr::q_value_for_threshold(c, threshold))
+    }
+
+    /// The statistic threshold that achieves FDR q-value `q`, from this column's
+    /// stored FDR curve; `None` if the column has no curve. The largest absolute
+    /// value in the column is used as AFNI uses it (for a `q` smaller than the
+    /// curve can express). See [`crate::fdr::threshold_for_q`].
+    pub fn threshold_for_q(&self, q: crate::fdr::QValue) -> Option<Result<f64>> {
+        let curve = self.fdr_curve.as_ref()?;
+        let max_abs = (0..self.values.len())
+            .filter_map(|i| self.values.get_f64(i))
+            .filter(|v| v.is_finite())
+            .map(f64::abs)
+            .fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.max(v))));
+        Some(crate::fdr::threshold_for_q(curve, q, max_abs))
+    }
+
+    /// The missed-detection fraction at p-value `p`, from this column's MDF
+    /// curve; `None` if the column has none. See
+    /// [`crate::fdr::missed_detection_fraction`].
+    pub fn missed_detection_fraction(&self, p: f64) -> Option<Result<f64>> {
+        self.mdf_curve
+            .as_ref()
+            .map(|c| crate::fdr::missed_detection_fraction(c, p))
+    }
+
     /// The recorded range next to the computed one.
     pub fn range_report(&self) -> RangeReport {
         RangeReport {
@@ -533,6 +565,30 @@ mod tests {
         let c = col(a.clone());
         assert!(c.eq_nan_aware(&c.clone()));
         assert!(!c.eq_nan_aware(&c.clone().with_units(Some("mm".into()))));
+    }
+
+    #[test]
+    fn fdr_conveniences_need_a_curve() {
+        let plain = col(ColumnData::Float64(vec![1.0, 2.0]));
+        assert!(plain.q_for_threshold(1.0).is_none());
+        assert!(plain
+            .threshold_for_q(crate::fdr::QValue::new(0.05).unwrap())
+            .is_none());
+        assert!(plain.missed_detection_fraction(0.01).is_none());
+        let curve = ThresholdCurve::new(0.0, 1.0, vec![0.0, 1.0, 2.0, 3.0]).unwrap();
+        let with = col(ColumnData::Float64(vec![-9.0, 2.0])).with_fdr_curve(Some(curve.clone()));
+        let q = with.q_for_threshold(2.0).unwrap().unwrap().get();
+        assert!((q - crate::fdr::q_for_z(2.0).unwrap().get()).abs() < 1e-15);
+        // A q smaller than the curve allows: the column's largest |value| (9) wins.
+        let thr = with
+            .threshold_for_q(crate::fdr::QValue::new(1e-12).unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(thr, 9.0 * 1.000002);
+        let mdf = col(ColumnData::Float64(vec![1.0])).with_mdf_curve(Some(
+            ThresholdCurve::new(-3.0, 1.0, vec![1.0, 0.5, 0.1, 0.0]).unwrap(),
+        ));
+        assert_eq!(mdf.missed_detection_fraction(1.0).unwrap().unwrap(), 0.0);
     }
 
     #[test]
