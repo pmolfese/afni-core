@@ -27,6 +27,7 @@ Status: ✅ done · 🚧 in progress · ⬜ not started
 | 9 | Time-series preprocessing and seed correlation | ✅ |
 | 10 | Graph, tract, and other derived semantic models | ✅ |
 | 11 | Consumer migration, performance, and API stabilization | ⬜ |
+| 12 | Expression evaluator (`3dcalc` language) for masks | ✅ |
 
 The consolidated list of differences from AFNI/SUMA (one row each, with the owner
 decision it came from) is [`docs/DIFFERENCES_FROM_AFNI.md`](docs/DIFFERENCES_FROM_AFNI.md);
@@ -495,6 +496,24 @@ syntax remains in `afni-io`.
   supplied by a caller rather than reading files inside `afni-core`.
 - [ ] Establish semantic versioning and a deprecation window for types moved
   from `afni-io` or `sumaru`.
+
+---
+
+## Phase 12 — Expression evaluator (`3dcalc` language) ✅
+
+Requested by afniru (threshold masks of overlays: "where A is, where B is, where both
+are"). A pure parser/evaluator so a viewer can turn a rule such as
+`step(a-3)*step(b-2)` into a mask. Ported from `parser.f` and checked against `1deval`.
+
+- [x] `calc::Expr::parse` / `eval` / `eval_vars` / `variables`, with AFNI's grammar,
+  precedence, "designed not to fail" semantics, and the core function set (math,
+  masks, variable-argument statistics); other AFNI functions rejected by name.
+- [x] Conformance: `tests/calc_conformance.rs` replays about 190 cases from
+  `tests/data/conformance/calc.ref` (regenerate with `regenerate_calc_refs.sh`) and,
+  with `AFNI_CORE_LIVE=1`, re-runs them through `1deval`.
+- [x] Differences recorded in `docs/DIFFERENCES_FROM_AFNI.md` §13 (C-1..C-10).
+- [ ] Later, if needed: relational operators as a non-AFNI extension; the remaining
+  functions (`erf`/`qg`, random, `fico_*`); evaluating a whole column at once.
 
 ---
 
@@ -1190,4 +1209,11 @@ sumaru-facing items were deferred. "Deferred" entries stay valid and can be reop
   overlay settings (threshold slider 0-10 with a `**` exponent to 10^5,
   `AFNI_PBAR_FULLRANGE=YES`, autorange percentile 0) are GUI behavior and belong to the
   viewers. `ALL` still lists only the nine `display.c` scales; `ALL_NAMED` has ten.
-
+- **2026-10-03 · Phase 12.** `calc` ports AFNI's expression evaluator for afniru's
+  overlay masks. Reading `parser.f` and probing `ccalc` showed: no relational
+  operators exist in 3dcalc; spaces are deleted before parsing (`2 3` = 23); unary
+  minus binds below `^`; illegal operations are made legal (not NaN); and
+  `absextreme` never executes in AFNI's scalar evaluator (the 8-character opcode
+  `ABSEXTRE` never equals `ABSEXTREME`), returning the argument count. afni-core
+  implements the documented `absextreme`, copies the `extreme` sign quirk, and
+  records both (C-4, C-5).

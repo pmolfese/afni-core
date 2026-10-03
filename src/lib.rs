@@ -91,6 +91,7 @@
 //! | [`mesh`] | Mesh geometry (normals, areas, volume) and distance searches | 6 |
 //! | [`topology`] | Validated triangle-mesh connectivity, diagnostics, rings | 6 |
 //! | [`threshold`] | Thresholds, transparent thresholding, matched-p transfer | 5 |
+//! | [`calc`] | `3dcalc`-style expressions (masks such as `step(a-3)*step(b-2)`) | 12 |
 //! | [`fdr`] | FDR/MDF curves, q-values, Benjamini-Hochberg | 3 |
 //! | [`curve`] | Validated FDR/MDF curve tables | 1 (lookups in 3) |
 //! | [`labels`] | Label tables (keys, names, colors) | 1 (colors in 4) |
@@ -147,6 +148,7 @@
 #![warn(missing_debug_implementations)]
 
 pub mod afni_colors;
+pub mod calc;
 pub mod cluster;
 pub mod color;
 pub mod column;
