@@ -508,11 +508,13 @@ are"). A pure parser/evaluator so a viewer can turn a rule such as
 - [x] `calc::Expr::parse` / `eval` / `eval_vars` / `variables`, with AFNI's grammar,
   precedence, "designed not to fail" semantics, and the core function set (math,
   masks, variable-argument statistics); other AFNI functions rejected by name.
-- [x] Conformance: `tests/calc_conformance.rs` replays about 190 cases from
+- [x] Conformance: `tests/calc_conformance.rs` replays about 260 cases from
   `tests/data/conformance/calc.ref` (regenerate with `regenerate_calc_refs.sh`) and,
   with `AFNI_CORE_LIVE=1`, re-runs them through `1deval`.
-- [x] Differences recorded in `docs/DIFFERENCES_FROM_AFNI.md` §13 (C-1..C-10).
-- [ ] Later, if needed: relational operators as a non-AFNI extension; the remaining
+- [x] Differences recorded in `docs/DIFFERENCES_FROM_AFNI.md` §13 (C-1..C-11).
+- [x] C-style operators as a non-AFNI extension (`< <= > >= == != && || ! ?:`),
+  verified against AFNI through the function forms they abbreviate (C-11).
+- [ ] Later, if needed: the remaining
   functions (`erf`/`qg`, random, `fico_*`); evaluating a whole column at once.
 
 ---
@@ -1216,4 +1218,6 @@ sumaru-facing items were deferred. "Deferred" entries stay valid and can be reop
   `absextreme` never executes in AFNI's scalar evaluator (the 8-character opcode
   `ABSEXTRE` never equals `ABSEXTREME`), returning the argument count. afni-core
   implements the documented `absextreme`, copies the `extreme` sign quirk, and
-  records both (C-4, C-5).
+  records both (C-4, C-5). On request the C-style operators were then added as sugar
+  (C-11); the conformance fixture records, for each, AFNI's answer for the equivalent
+  function form (1deval cannot parse the operators themselves).

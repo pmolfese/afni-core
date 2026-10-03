@@ -47,7 +47,7 @@ fn evaluate(args: &[String]) -> f64 {
 fn fixture_records_afni_provenance_and_has_many_cases() {
     let fx = Fixture::load(FIXTURE);
     assert!(fx.afni_version().contains("AFNI_"));
-    assert!(fx.cases.len() > 150, "{} cases", fx.cases.len());
+    assert!(fx.cases.len() > 200, "{} cases", fx.cases.len());
 }
 
 #[test]
@@ -74,6 +74,11 @@ fn every_case_matches_live_afni() {
         rel: 2e-5,
     };
     for case in &fx.cases {
+        // The C-style operators are an afni-core extension 1deval rejects; the
+        // recorded value is AFNI's answer for the equivalent function form.
+        if case.args[0].contains(|c| "<>=!&|?:".contains(c)) {
+            continue;
+        }
         let mut args: Vec<String> = case.args[1..].iter().map(|a| format!("-{a}")).collect();
         args.extend([
             "-num".into(),

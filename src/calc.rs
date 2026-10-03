@@ -29,9 +29,11 @@
 //   `* /`, then `**` (also written `^`), which associates to the RIGHT
 //   (`2^3^2` = 512). A unary minus applies to the whole power expression that
 //   follows it (`-2^2` = -4, `2^-1` = 0.5); a unary plus is ignored. `[ ]` are
-//   the same as `( )`. There are NO relational, boolean or conditional
-//   operators (no `>`, `&&`, `?:`, `%`): masks are built with `step`, `astep`,
-//   `within`, `equals`, `and`, `or`, `not` and `ifelse`, exactly as in 3dcalc.
+//   the same as `( )`. AFNI has NO relational, boolean or conditional
+//   operators (no `>`, `&&`, `?:`, `%`); its masks are built with `step`,
+//   `astep`, `within`, `equals`, `and`, `or`, `not` and `ifelse`. Those all
+//   work here exactly as in 3dcalc, and this crate ADDS C-style operators as
+//   sugar (see DEPARTURES): `< <= > >= == !=`, `&& || !`, and `c ? t : f`.
 //
 //   "Designed not to fail" (parser.f line 496): illegal operations become
 //   legal ones instead of NaN: `x/0` is 0, `sqrt(x)` is `sqrt(|x|)`, `log(x)`
@@ -46,6 +48,15 @@
 //
 // DEPARTURES (also listed in docs/DIFFERENCES_FROM_AFNI.md)
 //
+//   * ADDED operators, absent from AFNI (which rejects them). Precedence,
+//     lowest to highest: `?:` (right-associative), `||`, `&&`, `== !=`,
+//     `< <= > >=`, `+ -`, `* /`, unary `! - +`, `**`. Comparisons and boolean
+//     operators give 1 or 0; `&&`, `||`, `!` and the `?` test treat any
+//     nonzero value as true (like `and`, `or`, `not`, `ifelse`). Unlike
+//     `step`, a comparison with NaN is false. `a<b` is `step(b-a)`, `a==b` is
+//     `equals(a,b)`, `a&&b` is `and(a,b)`, `c?t:f` is `ifelse(c,t,f)`; the
+//     conformance tests check these identities against AFNI itself. A single
+//     `=`, `&` or `|` is an error rather than being guessed at.
 //   * Only the core function set is implemented (see `FUNCTIONS`). The rest of
 //     AFNI's list (random numbers, Bessel/Airy/gamma/erf, the 27 `fico_*`
 //     conversions, `hrfbk*`, `rhddc2`, `acfwxm`, `gamp/gamq`, `isprime`,
@@ -93,6 +104,18 @@ enum Op {
     Div,
     Pow,
     Neg,
+    // Extensions (not in AFNI): comparisons and boolean logic, all 1.0 / 0.0.
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Eq,
+    Ne,
+    And,
+    Or,
+    Not,
+    /// `c ? t : f`: pops three values, pushes `t` if `c` is not zero, else `f`.
+    Select,
     /// Call a function with this many arguments (already on the stack).
     Call(Func, u8),
 }
@@ -181,6 +204,18 @@ enum Token {
     Open,
     Close,
     Comma,
+    // Extensions (not in AFNI).
+    Less,
+    LessEq,
+    Greater,
+    GreaterEq,
+    EqEq,
+    NotEq,
+    AndAnd,
+    OrOr,
+    Bang,
+    Question,
+    Colon,
     End,
 }
 
@@ -204,6 +239,43 @@ fn tokenize(text: &str) -> Result<Vec<Token>> {
             '(' | '[' => tokens.push(Token::Open),
             ')' | ']' => tokens.push(Token::Close),
             ',' => tokens.push(Token::Comma),
+            '<' | '>' | '!' | '=' | '&' | '|' => {
+                let two = chars.get(i + 1) == Some(&'=');
+                let token = match (c, two) {
+                    ('<', true) => Token::LessEq,
+                    ('<', false) => Token::Less,
+                    ('>', true) => Token::GreaterEq,
+                    ('>', false) => Token::Greater,
+                    ('!', true) => Token::NotEq,
+                    ('!', false) => Token::Bang,
+                    ('=', true) => Token::EqEq,
+                    ('=', false) => {
+                        return Err(bad(
+                            "a single '=' is not an operator: write '==' to compare",
+                        ));
+                    }
+                    ('&', _) | ('|', _) => {
+                        if chars.get(i + 1) != Some(&c) {
+                            return Err(bad(format!(
+                                "write '{c}{c}' for logical {}",
+                                if c == '&' { "and" } else { "or" }
+                            )));
+                        }
+                        if c == '&' {
+                            Token::AndAnd
+                        } else {
+                            Token::OrOr
+                        }
+                    }
+                    _ => unreachable!(),
+                };
+                if matches!(token, Token::AndAnd | Token::OrOr) || two {
+                    i += 1;
+                }
+                tokens.push(token);
+            }
+            '?' => tokens.push(Token::Question),
+            ':' => tokens.push(Token::Colon),
             c if c.is_ascii_alphabetic() => {
                 let start = i;
                 while i + 1 < chars.len()
@@ -299,6 +371,75 @@ impl Parser {
         t
     }
 
+    /// Extension: `c ? t : f`, right-associative, lowest precedence.
+    fn expr(&mut self) -> Result<()> {
+        self.or()?;
+        if *self.peek() == Token::Question {
+            self.next();
+            self.expr()?;
+            if self.next() != Token::Colon {
+                return Err(bad("expected a ':' to finish the '?' choice"));
+            }
+            self.expr()?;
+            self.code.push(Op::Select);
+        }
+        Ok(())
+    }
+
+    /// Extension: `||`, left to right.
+    fn or(&mut self) -> Result<()> {
+        self.and()?;
+        while *self.peek() == Token::OrOr {
+            self.next();
+            self.and()?;
+            self.code.push(Op::Or);
+        }
+        Ok(())
+    }
+
+    /// Extension: `&&`, left to right.
+    fn and(&mut self) -> Result<()> {
+        self.equality()?;
+        while *self.peek() == Token::AndAnd {
+            self.next();
+            self.equality()?;
+            self.code.push(Op::And);
+        }
+        Ok(())
+    }
+
+    /// Extension: `==` and `!=`.
+    fn equality(&mut self) -> Result<()> {
+        self.relation()?;
+        loop {
+            let op = match self.peek() {
+                Token::EqEq => Op::Eq,
+                Token::NotEq => Op::Ne,
+                _ => return Ok(()),
+            };
+            self.next();
+            self.relation()?;
+            self.code.push(op);
+        }
+    }
+
+    /// Extension: `<`, `<=`, `>`, `>=`.
+    fn relation(&mut self) -> Result<()> {
+        self.sum()?;
+        loop {
+            let op = match self.peek() {
+                Token::Less => Op::Lt,
+                Token::LessEq => Op::Le,
+                Token::Greater => Op::Gt,
+                Token::GreaterEq => Op::Ge,
+                _ => return Ok(()),
+            };
+            self.next();
+            self.sum()?;
+            self.code.push(op);
+        }
+    }
+
     /// `E4`: sum of terms, left to right.
     fn sum(&mut self) -> Result<()> {
         self.term()?;
@@ -362,7 +503,7 @@ impl Parser {
             }
             Token::Func(f) => self.call(f)?,
             Token::Open => {
-                self.sum()?;
+                self.expr()?;
                 self.expect_close()?;
             }
             // A unary plus is dropped.
@@ -372,7 +513,25 @@ impl Parser {
                 self.power_expr()?;
                 self.code.push(Op::Neg);
             }
-            Token::Star | Token::Slash | Token::Power | Token::Comma => {
+            // A unary `!` binds like a unary minus.
+            Token::Bang => {
+                self.power_expr()?;
+                self.code.push(Op::Not);
+            }
+            Token::Star
+            | Token::Slash
+            | Token::Power
+            | Token::Comma
+            | Token::Less
+            | Token::LessEq
+            | Token::Greater
+            | Token::GreaterEq
+            | Token::EqEq
+            | Token::NotEq
+            | Token::AndAnd
+            | Token::OrOr
+            | Token::Question
+            | Token::Colon => {
                 return Err(bad("expected a value before an operator"));
             }
             Token::Close => return Err(bad("expected an expression before ')'")),
@@ -401,10 +560,10 @@ impl Parser {
             )));
         }
         let mut count = 1usize;
-        self.sum()?;
+        self.expr()?;
         while *self.peek() == Token::Comma {
             self.next();
-            self.sum()?;
+            self.expr()?;
             count += 1;
         }
         self.expect_close()?;
@@ -470,7 +629,7 @@ impl Expr {
             code: Vec::new(),
             used: [false; 26],
         };
-        p.sum()?;
+        p.expr()?;
         match p.peek() {
             Token::End => {}
             Token::Close => return Err(bad("unbalanced \")\"")),
@@ -528,6 +687,26 @@ impl Expr {
                         *top = -*top;
                     }
                 }
+                Op::Lt => binary(stack, |a, b| flag(a < b)),
+                Op::Le => binary(stack, |a, b| flag(a <= b)),
+                Op::Gt => binary(stack, |a, b| flag(a > b)),
+                Op::Ge => binary(stack, |a, b| flag(a >= b)),
+                Op::Eq => binary(stack, |a, b| flag(a == b)),
+                Op::Ne => binary(stack, |a, b| flag(a != b)),
+                Op::And => binary(stack, |a, b| flag(a != 0.0 && b != 0.0)),
+                Op::Or => binary(stack, |a, b| flag(a != 0.0 || b != 0.0)),
+                Op::Not => {
+                    if let Some(top) = stack.last_mut() {
+                        *top = flag(*top == 0.0);
+                    }
+                }
+                Op::Select => {
+                    let f = stack.pop().unwrap_or(0.0);
+                    let t = stack.pop().unwrap_or(0.0);
+                    if let Some(c) = stack.last_mut() {
+                        *c = if *c != 0.0 { t } else { f };
+                    }
+                }
                 Op::Call(f, n) => {
                     let at = stack.len() - n as usize;
                     let result = call(f, &mut stack[at..]);
@@ -562,6 +741,14 @@ fn step(x: f64) -> f64 {
         0.0
     } else {
         1.0
+    }
+}
+
+fn flag(b: bool) -> f64 {
+    if b {
+        1.0
+    } else {
+        0.0
     }
 }
 
@@ -1090,12 +1277,117 @@ mod tests {
         assert_eq!(*asked.borrow(), ['b', 'd']);
     }
 
+    fn run(text: &str, a: f64, b: f64) -> f64 {
+        Expr::parse(text)
+            .unwrap()
+            .eval(|c| if c == 'a' { a } else { b })
+    }
+
+    #[test]
+    fn comparisons_give_one_or_zero() {
+        for (t, a, b, want) in [
+            ("a<b", 1.0, 2.0, 1.0),
+            ("a<b", 2.0, 2.0, 0.0),
+            ("a<=b", 2.0, 2.0, 1.0),
+            ("a>b", 3.0, 2.0, 1.0),
+            ("a>b", 2.0, 2.0, 0.0),
+            ("a>=b", 2.0, 2.0, 1.0),
+            ("a==b", 2.0, 2.0, 1.0),
+            ("a==b", 2.0, 3.0, 0.0),
+            ("a!=b", 2.0, 3.0, 1.0),
+            ("a!=b", 2.0, 2.0, 0.0),
+            ("a>-3", -2.0, 0.0, 1.0),
+            ("a > 3", 3.5, 0.0, 1.0),
+        ] {
+            assert_eq!(run(t, a, b), want, "{t} with a={a} b={b}");
+        }
+        // NaN compares false, never true.
+        assert_eq!(run("a<b", f64::NAN, 1.0), 0.0);
+        assert_eq!(run("a>=b", f64::NAN, 1.0), 0.0);
+        assert_eq!(run("a!=b", f64::NAN, 1.0), 1.0);
+    }
+
+    #[test]
+    fn boolean_operators_treat_nonzero_as_true() {
+        assert_eq!(run("a&&b", 5.0, -2.0), 1.0);
+        assert_eq!(run("a&&b", 5.0, 0.0), 0.0);
+        assert_eq!(run("a||b", 0.0, 0.0), 0.0);
+        assert_eq!(run("a||b", 0.0, 0.1), 1.0);
+        assert_eq!(run("!a", 0.0, 0.0), 1.0);
+        assert_eq!(run("!a", 7.0, 0.0), 0.0);
+        assert_eq!(run("!!a", 7.0, 0.0), 1.0);
+    }
+
+    #[test]
+    fn operator_precedence_runs_from_ternary_down_to_power() {
+        // && binds tighter than ||.
+        assert_eq!(run("1||0&&0", 0.0, 0.0), 1.0);
+        // Relations bind tighter than equality: (1<2)==(2<3).
+        assert_eq!(run("1<2==2<3", 0.0, 0.0), 1.0);
+        // Arithmetic binds tighter than relations.
+        assert_eq!(run("a+1>b*2", 3.0, 2.0), 0.0);
+        assert_eq!(run("a+1>=b*2", 3.0, 2.0), 1.0);
+        // ! is unary: it applies before == but after **.
+        assert_eq!(run("!a==b", 0.0, 1.0), 1.0);
+        assert_eq!(run("!2^2", 0.0, 0.0), 0.0);
+        // Chained comparisons are C-style, left to right: (1<2)<3.
+        assert_eq!(run("3>2>1", 0.0, 0.0), 0.0);
+        // A comparison can be a factor of a product.
+        assert_eq!(run("(a>1)*10+b", 2.0, 5.0), 15.0);
+    }
+
+    #[test]
+    fn the_conditional_picks_a_branch_and_nests_to_the_right() {
+        assert_eq!(run("a>0 ? 10 : 20", 1.0, 0.0), 10.0);
+        assert_eq!(run("a>0 ? 10 : 20", -1.0, 0.0), 20.0);
+        // a ? b : c ? d : e is a ? b : (c ? d : e).
+        let t = "a<0 ? -1 : a==0 ? 0 : 1";
+        assert_eq!(run(t, -5.0, 0.0), -1.0);
+        assert_eq!(run(t, 0.0, 0.0), 0.0);
+        assert_eq!(run(t, 5.0, 0.0), 1.0);
+        // Inside a function argument and inside parentheses.
+        assert_eq!(run("abs(a<0 ? a : -a)", 3.0, 0.0), 3.0);
+        assert_eq!(run("1+(a ? 2 : 3)", 0.0, 0.0), 4.0);
+        // Variables in every branch are reported.
+        let e = Expr::parse("a ? b : c").unwrap();
+        assert_eq!(e.variables(), vec!['a', 'b', 'c']);
+    }
+
+    #[test]
+    fn operators_agree_with_the_function_forms() {
+        let f = [-2.0, -0.5, 0.0, 0.5, 2.0];
+        for a in f {
+            for b in f {
+                for (op, func) in [
+                    ("a<b", "step(b-a)"),
+                    ("a>b", "step(a-b)"),
+                    ("a<=b", "1-step(a-b)"),
+                    ("a>=b", "1-step(b-a)"),
+                    ("a==b", "equals(a,b)"),
+                    ("a!=b", "1-equals(a,b)"),
+                    ("a&&b", "and(a,b)"),
+                    ("a||b", "or(a,b)"),
+                    ("!a", "not(a)"),
+                    ("a?b:7", "ifelse(a,b,7)"),
+                ] {
+                    assert_eq!(run(op, a, b), run(func, a, b), "{op} vs {func} at {a},{b}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn errors_name_the_problem() {
         let msg = |t: &str| err(t).to_string();
         assert!(msg("").contains("empty"));
         assert!(msg("3 %").contains("cannot interpret"), "{}", msg("3 %"));
-        assert!(msg("a>3").contains("cannot interpret"));
+        assert!(msg("a>").contains("end"));
+        assert!(msg("a=3").contains("'=='"));
+        assert!(msg("a&b").contains("'&&'"));
+        assert!(msg("a|b").contains("'||'"));
+        assert!(msg("a?1").contains("':'"));
+        assert!(msg("<3").contains("before an operator"));
+        assert!(msg("1:2").contains("expected an operator"));
         assert!(msg("2 +").contains("end"));
         assert!(msg("(2+3").contains("\")\""));
         assert!(msg("2+3)").contains("unbalanced"));
