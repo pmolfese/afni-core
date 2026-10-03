@@ -1,0 +1,20 @@
+# AFNI conformance fixture for the 'cdf' program (probability <-> statistic).
+# afni_version: Precompiled binary macos_13_ARM: Sep 17 2026 (Version AFNI_26.2.08 'Gordian III')
+# generated: 2026-10-02
+# generator: tests/data/regenerate_conformance.sh
+# precision: cdf prints 6 significant digits
+-t2p fizt 0.0 => 1
+-t2p fizt 1.0 => 0.317311
+-t2p fizt 1.96 => 0.0499958
+-t2p fizt 3.0 => 0.0026998
+-t2p fitt 0.0 10 => 1
+-t2p fitt 1.0 10 => 0.340893
+-t2p fitt 2.0 10 => 0.073388
+-t2p fitt 3.0 10 => 0.0133437
+-t2p fift 4.0 3 20 => 0.022077
+-t2p fict 3.84 1 => 0.0500435
+-t2p fict 10.0 5 => 0.0752352
+-p2t fizt 0.025 => 2.2414
+-p2t fitt 0.05 10 => 2.22814
+-p2t fift 0.05 3 20 => 3.09839
+-p2t fict 0.05 1 => 3.84146

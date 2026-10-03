@@ -1,0 +1,17 @@
+[package]
+name = "afni-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+description = "File-neutral data models and algorithms for AFNI/SUMA tools: statistics, color maps, thresholds, clusters, and ROIs."
+license = "CC0-1.0"  # US Government work; see LICENSE
+keywords = ["afni", "suma", "neuroimaging", "statistics"]
+categories = ["science"]
+
+[dependencies]
+# Derives `std::error::Error` and `Display` for our error enum. Same crate and
+# major version as `afni-io`, so the workspace compiles it once.
+thiserror = "2"
+
+[lints.rust]
+unsafe_code = "forbid"
