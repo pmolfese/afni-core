@@ -107,3 +107,78 @@ fn spectrum_functions_match_afni_including_wrap_and_gamma_edge_cases() {
     }
     assert_eq!(compared, 220);
 }
+
+// ---------------------------------------------------------------------------
+// AFNI's default overlay scale: Reds_and_Blues_Inv (pbardefs.h, not display.c)
+// ---------------------------------------------------------------------------
+
+fn default_scale_fixture() -> (String, Vec<[u8; 3]>) {
+    let text = std::fs::read_to_string(common::data("conformance/afni_default_scale.ref")).unwrap();
+    let mut name = String::new();
+    let mut colors = Vec::new();
+    for line in text.lines() {
+        if let Some(n) = line.strip_prefix("default ") {
+            name = n.trim().to_owned();
+        } else if let Some(rest) = line.strip_prefix("scale ") {
+            colors = rest.split_whitespace().map(parse_rgb).collect();
+        }
+    }
+    (name, colors)
+}
+
+#[test]
+fn the_default_scale_is_the_one_afni_sets_and_matches_its_256_colors() {
+    let (name, colors) = default_scale_fixture();
+    // afni.c sets AFNI_COLORSCALE_DEFAULT to this name; core's default agrees.
+    assert_eq!(AfniColorScale::afni_default().name(), name);
+    assert_eq!(
+        AfniColorScale::from_name(&name),
+        Some(AfniColorScale::afni_default())
+    );
+    // All 256 entries equal the hex list in pbardefs.h, byte for byte.
+    assert_eq!(colors.len(), 256);
+    assert_eq!(AfniColorScale::afni_default().table(256).unwrap(), colors);
+}
+
+#[test]
+fn the_default_scale_is_each_half_of_reds_and_blues_reversed() {
+    let base = AfniColorScale::RedsAndBlues.table(256).unwrap();
+    let inv = AfniColorScale::RedsAndBluesInv.table(256).unwrap();
+    for i in 0..128 {
+        assert_eq!(inv[i], base[127 - i]);
+        assert_eq!(inv[128 + i], base[255 - i]);
+    }
+    // Top of the bar is red at 255,11,0 and the bottom is blue-cyan, as in AFNI's list.
+    assert_eq!((inv[0], inv[255]), ([255, 11, 0], [37, 0, 255]));
+    // It exists only at AFNI's 256 entries.
+    assert!(AfniColorScale::RedsAndBluesInv.table(128).is_err());
+    assert!(AfniColorScale::RedsAndBluesInv.to_color_table(256).is_ok());
+    assert!(AfniColorScale::RedsAndBluesInv.to_color_map(256).is_ok());
+    // The nine display.c scales are unchanged by its addition.
+    assert_eq!(AfniColorScale::ALL.len(), 9);
+    assert_eq!(AfniColorScale::ALL_NAMED.len(), 10);
+}
+
+#[test]
+fn live_afni_source_still_names_the_same_default() {
+    if !common::live_enabled() {
+        eprintln!("skipping: set AFNI_CORE_LIVE=1 to re-read afni.c and pbardefs.h");
+        return;
+    }
+    let committed =
+        std::fs::read_to_string(common::data("conformance/afni_default_scale.ref")).unwrap();
+    let target = std::env::temp_dir().join(format!("afni_core_live_{}.ref", std::process::id()));
+    let out = std::process::Command::new("bash")
+        .arg(common::data("regenerate_afni_default_scale.sh"))
+        .env("REGEN_OUT", &target)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let regenerated = std::fs::read_to_string(&target).unwrap();
+    let _ = std::fs::remove_file(&target);
+    assert_eq!(regenerated, committed);
+}

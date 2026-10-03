@@ -164,10 +164,18 @@ pub enum AfniColorScale {
     RedsAndBlues,
     /// `Reds_and_Blues_w_Green`: `RedsAndBlues` with two green entries in the middle.
     RedsAndBluesWithGreen,
+    /// `Reds_and_Blues_Inv`: AFNI's DEFAULT overlay scale (`AFNI_COLORSCALE_DEFAULT`
+    /// in `afni.c`). Defined in `pbardefs.h` as 256 fixed colors, it is `RedsAndBlues`
+    /// with each half reversed (reds from deep red at the bottom of the upper half up
+    /// to yellow, blues from deep blue to cyan). Unlike the other nine it is NOT one
+    /// of `display.c`'s computed scales, so it exists only at 256 entries.
+    RedsAndBluesInv,
 }
 
 impl AfniColorScale {
-    /// Every scale, in AFNI's order.
+    /// The nine computed scales of `display.c`, in AFNI's order (`BIGMAP_NAMES`).
+    /// The fixture comparing against AFNI's code covers exactly these;
+    /// [`ALL_NAMED`](Self::ALL_NAMED) adds the `pbardefs.h` default.
     pub const ALL: [AfniColorScale; 9] = [
         AfniColorScale::SpectrumRedToBlue,
         AfniColorScale::SpectrumRedToBlueGap,
@@ -180,7 +188,27 @@ impl AfniColorScale {
         AfniColorScale::RedsAndBluesWithGreen,
     ];
 
-    /// AFNI's name for the scale (`BIGMAP_NAMES`).
+    /// [`ALL`](Self::ALL) plus `Reds_and_Blues_Inv`, every scale this crate can name.
+    pub const ALL_NAMED: [AfniColorScale; 10] = [
+        AfniColorScale::SpectrumRedToBlue,
+        AfniColorScale::SpectrumRedToBlueGap,
+        AfniColorScale::SpectrumYellowToCyan,
+        AfniColorScale::SpectrumYellowToCyanGap,
+        AfniColorScale::SpectrumYellowToRed,
+        AfniColorScale::ColorCircleAjj,
+        AfniColorScale::ColorCircleZss,
+        AfniColorScale::RedsAndBlues,
+        AfniColorScale::RedsAndBluesWithGreen,
+        AfniColorScale::RedsAndBluesInv,
+    ];
+
+    /// The scale AFNI starts with: `Reds_and_Blues_Inv` (`afni.c` sets
+    /// `AFNI_COLORSCALE_DEFAULT` to it; a user can override it).
+    pub const fn afni_default() -> Self {
+        Self::RedsAndBluesInv
+    }
+
+    /// AFNI's name for the scale (`BIGMAP_NAMES`, or `pbardefs.h` for the default).
     pub fn name(self) -> &'static str {
         match self {
             Self::SpectrumRedToBlue => "Spectrum:red_to_blue",
@@ -192,12 +220,13 @@ impl AfniColorScale {
             Self::ColorCircleZss => "Color_circle_ZSS",
             Self::RedsAndBlues => "Reds_and_Blues",
             Self::RedsAndBluesWithGreen => "Reds_and_Blues_w_Green",
+            Self::RedsAndBluesInv => "Reds_and_Blues_Inv",
         }
     }
 
     /// Find a scale by AFNI's name (case-insensitive).
     pub fn from_name(name: &str) -> Option<Self> {
-        Self::ALL
+        Self::ALL_NAMED
             .into_iter()
             .find(|s| s.name().eq_ignore_ascii_case(name.trim()))
     }
@@ -210,6 +239,24 @@ impl AfniColorScale {
     /// `entries` must be at least 32 (below that the black "gap" is empty) and at
     /// most 2048 (AFNI's `NPANE_BIGGEST`).
     pub fn table(self, entries: usize) -> Result<Vec<[u8; 3]>> {
+        if self == Self::RedsAndBluesInv {
+            // A fixed 256-color list in pbardefs.h, not a formula: there is nothing to
+            // evaluate at another size, and AFNI would have to resample it.
+            if entries != 256 {
+                return Err(Error::InvalidParameter {
+                    name: "entries".into(),
+                    reason: format!(
+                        "Reds_and_Blues_Inv is a fixed 256-color list in AFNI, got {entries}"
+                    ),
+                });
+            }
+            // Each half of Reds_and_Blues, reversed (checked entry for entry against the
+            // hex list in pbardefs.h by tests/colorscale_conformance.rs).
+            let mut table = Self::RedsAndBlues.table(256)?;
+            table[..128].reverse();
+            table[128..].reverse();
+            return Ok(table);
+        }
         if !(32..=2048).contains(&entries) {
             return Err(Error::InvalidParameter {
                 name: "entries".into(),
@@ -268,6 +315,7 @@ impl AfniColorScale {
                             )
                         }
                     }
+                    Self::RedsAndBluesInv => unreachable!("handled above"),
                     Self::RedsAndBlues | Self::RedsAndBluesWithGreen => {
                         if ii < half {
                             spectrum_ajj(AJJ_YEL - i * (AJJ_YEL / (half as f64 - 1.0)), 0.8)

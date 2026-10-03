@@ -1181,4 +1181,13 @@ sumaru-facing items were deferred. "Deferred" entries stay valid and can be reop
   (h) **Deliberately not built:** per-point scalar attributes on tracts (FATCAT files carry
   none), tract colors, resampling between surfaces, and the `Graph_Bucket` link to a tract
   file as anything but a path string (resolving it is the caller's job).
+- **2026-10-03 · Phase 4 follow-up (AFNI's default overlay scale).** AFNI's startup
+  colorscale is `Reds_and_Blues_Inv` (`afni.c` sets `AFNI_COLORSCALE_DEFAULT`, 24 May 2019),
+  defined in `pbardefs.h` as 256 hex colors rather than computed in `display.c`. It is
+  exactly `Reds_and_Blues` with each half reversed (256 of 256 entries equal). Added as
+  `AfniColorScale::RedsAndBluesInv` / `afni_default()`, available at 256 entries only, and
+  checked against the hex list and against the name in `afni.c`. AFNI's other startup
+  overlay settings (threshold slider 0-10 with a `**` exponent to 10^5,
+  `AFNI_PBAR_FULLRANGE=YES`, autorange percentile 0) are GUI behavior and belong to the
+  viewers. `ALL` still lists only the nine `display.c` scales; `ALL_NAMED` has ten.
 

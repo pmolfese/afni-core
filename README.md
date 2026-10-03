@@ -53,7 +53,7 @@ AFNI/SUMA, and why, is listed in
 | `src/signal.rs`, `src/instacorr.rs` | Detrend, Legendre regressors, orts, L2 normalize, FFT bandpass (no dependency); SUMA-style seed correlation returning `Correl(samples, 1, removed_dof)` |
 | `src/roi.rs`, `src/roi_ops.rs`, `src/roi_edit.rs` | The ROI model (lossless codes), `NodeSet`, ROI-to-dataset; grow/shrink/boundary/components/shortest path/fill; undoable edit commands |
 | `src/topology.rs`, `src/mesh.rs`, `src/cluster.rs` | Validated triangle-mesh connectivity and diagnostics; normals, areas, distance searches; connected-cluster labeling |
-| `src/color.rs`, `src/afni_colors.rs`, `src/suma_colormaps.rs`, `src/labels.rs` | `Rgba` and continuous maps; AFNI's nine built-in scales, exactly; SUMA's nine standard maps (`bgyr19`, `byr64`, ...); label tables and label colors |
+| `src/color.rs`, `src/afni_colors.rs`, `src/suma_colormaps.rs`, `src/labels.rs` | `Rgba` and continuous maps; AFNI's nine built-in scales, exactly, plus its default `Reds_and_Blues_Inv`; SUMA's nine standard maps (`bgyr19`, `byr64`, ...); label tables and label colors |
 | `tests/common/` | Shared AFNI-comparison test harness |
 | `tests/data/conformance/` | Committed AFNI reference values, with the AFNI version that made them |
 | `tests/data/regenerate_*.sh` | Scripts that rebuild those references from AFNI |
@@ -121,6 +121,7 @@ tests/data/regenerate_conformance.sh         # cdf conventions
 tests/data/regenerate_nifti_stats.sh         # nifticdf at full precision
 tests/data/regenerate_afni_colorscales.sh    # display.c color scales
 tests/data/regenerate_suma_colormaps.sh      # SUMA standard maps (MakeColorMap -std)
+tests/data/regenerate_afni_default_scale.sh  # AFNI default overlay scale (afni.c + pbardefs.h)
 tests/data/regenerate_volume_clusters.sh     # 3dClusterize maps and reports
 tests/data/regenerate_roi_refs.sh            # SurfDist distances, ROIgrow growth
 tests/data/regenerate_signal_refs.sh         # THD_bandpass_vectors (builds a C harness on libmri)
