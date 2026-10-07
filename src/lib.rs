@@ -65,12 +65,13 @@
 //!
 //! | Module | Purpose | Roadmap phase |
 //! |--------|---------|---------------|
+//! | [`affine`] | Static and per-volume spatial affine transformations | 12 |
 //! | [`error`] | The crate-wide [`Error`] and [`Result`] | 0 |
 //! | [`numeric`] | `f32`/`f64` rules, checked indices, NaN/Inf policy | 0 |
 //! | [`domain`] | Surface node sets and volume voxel grids | 1 |
 //! | [`mapping`] | Dense and indexed (sparse) row-to-sample maps | 1 |
 //! | [`column`](mod@column) | Typed columns and column metadata | 1 |
-//! | [`dataset`] | The validated [`Dataset`](dataset::Dataset) model | 1 |
+//! | [`dataset`] | The validated [`Dataset`](dataset::Dataset) model and derived datasets | 1 |
 //! | [`stat`] | `StatKind` / `StatSpec` (what a statistic *is*) | 1 (math in 2) |
 //! | [`special`] | log-gamma/beta, incomplete beta/gamma, normal tails (in log space) | 2 |
 //! | [`stats`] | Tail-aware p-values and critical values | 2 |
@@ -81,7 +82,8 @@
 //! | [`overlay`] | Overlay evaluation: colors, pass mask, diagnostics | 5 |
 //! | [`volume_cluster`] | Voxel connectivity (NN1/2/3) and clustering of a volume | 7 |
 //! | [`cluster`] | Connected-cluster labeling on a surface (SurfClust-compatible) | 6 |
-//! | [`signal`] | Detrending, Legendre orts, FFT bandpass with orts (`THD_bandpass_vectors`) | 9 |
+//! | [`signal`] | Detrending, power spectra, and FFT bandpass with orts (`THD_bandpass_vectors`) | 9 |
+//! | [`timeseries`] | Row-oriented views of column-major time-series datasets | 11 |
 //! | [`instacorr`] | Seed correlation: cleaned series, ROI seeds, correlation statistic | 9 |
 //! | [`graph`] | Networks: nodes, matrix/triangle/sparse edge layouts, measures | 10 |
 //! | [`tract`] | Tracts and bundles: length, tangents, bounds, selection | 10 |
@@ -89,6 +91,9 @@
 //! | [`roi_ops`] | Grow/shrink, boundary, components, shortest path, fill on node sets | 8 |
 //! | [`roi_edit`] | Undoable ROI edit commands and an editor | 8 |
 //! | [`mesh`] | Mesh geometry (normals, areas, volume) and distance searches | 6 |
+//! | [`mask`] | Domain-checked masks for volume voxels or surface nodes | 11 |
+//! | [`processing`] | Built-in temporal statistics and custom mask-aware voxel/node loops | 11 |
+//! | [`reduction`] | Mask-aware column counts, extrema, means, and variances | 11 |
 //! | [`topology`] | Validated triangle-mesh connectivity, diagnostics, rings | 6 |
 //! | [`threshold`] | Thresholds, transparent thresholding, matched-p transfer | 5 |
 //! | [`calc`] | `3dcalc`-style expressions (masks such as `step(a-3)*step(b-2)`) | 12 |
@@ -147,6 +152,7 @@
 #![warn(missing_docs)]
 #![warn(missing_debug_implementations)]
 
+pub mod affine;
 pub mod afni_colors;
 pub mod calc;
 pub mod cluster;
@@ -162,9 +168,12 @@ pub mod graph;
 pub mod instacorr;
 pub mod labels;
 pub mod mapping;
+pub mod mask;
 pub mod mesh;
 pub mod numeric;
 pub mod overlay;
+pub mod processing;
+pub mod reduction;
 pub mod roi;
 pub mod roi_edit;
 pub mod roi_ops;
@@ -174,6 +183,7 @@ pub mod stat;
 pub mod stats;
 pub mod suma_colormaps;
 pub mod threshold;
+pub mod timeseries;
 pub mod topology;
 pub mod tract;
 pub mod volume_cluster;

@@ -82,6 +82,15 @@ pub enum Error {
         value: usize,
     },
 
+    /// A dataset column index was outside `0..len`.
+    #[error("column index {index} is out of range for {len} columns")]
+    ColumnIndexOutOfRange {
+        /// The requested zero-based column index.
+        index: usize,
+        /// Number of columns in the dataset.
+        len: usize,
+    },
+
     /// A parameter was finite but outside the range its operation accepts,
     /// for example a negative degrees-of-freedom count.
     #[error("invalid parameter {name}: {reason}")]
@@ -113,6 +122,17 @@ pub enum Error {
         expected: usize,
         /// The length supplied.
         found: usize,
+    },
+
+    /// Two objects refer to different spatial sample domains.
+    ///
+    /// This is distinct from a length mismatch: a two-voxel volume and a
+    /// two-node surface have the same number of samples but cannot safely share
+    /// a mask or per-sample result.
+    #[error("domain mismatch: {what}")]
+    DomainMismatch {
+        /// What incompatible objects were being combined.
+        what: String,
     },
 
     /// Something that must contain data was empty (a dataset with no columns,

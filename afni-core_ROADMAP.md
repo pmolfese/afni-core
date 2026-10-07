@@ -1221,3 +1221,105 @@ sumaru-facing items were deferred. "Deferred" entries stay valid and can be reop
   records both (C-4, C-5). On request the C-style operators were then added as sugar
   (C-11); the conformance fixture records, for each, AFNI's answer for the equivalent
   function form (1deval cannot parse the operators themselves).
+- **2026-10-06 · Phase 11 (`TimeSeriesView`).** The file-neutral `Dataset` keeps
+  one typed column per time point, but AFNI programs usually operate on one voxel
+  or surface-node series at a time. `Dataset::time_series` now provides that
+  row-oriented view without transposing the complete dataset. `series(row)` is
+  an allocation-free exact-sized iterator; `copy_series_into` supports one
+  reusable contiguous `f64` work buffer; `series_for_sample` and
+  `sample_for_series` preserve the distinction between sparse dataset rows and
+  domain sample indices. Explicit `TimePoint` columns take precedence; when a
+  file format has not retained that role, numeric `Generic` columns are the
+  fallback, matching the previous InstaCorr policy. InstaCorr now consumes the
+  shared view rather than maintaining its own private transpose implementation.
+- **2026-10-06 · Phase 11 (`SampleMask`).** Added one file-neutral mask type with
+  one boolean per `Domain` sample rather than per stored dataset row. It can be
+  built from a domain-sized typed column or from a dense/sparse dataset column;
+  sparse samples with no row are explicitly unselected. Structural domain
+  checks prevent mixing a surface mask with a same-sized volume, or masks with
+  different domain IDs/affines; anonymous same-sized surfaces remain
+  indistinguishable and should carry a `DomainId` when identity matters.
+  Checked intersection, union, complement,
+  selected-sample iteration, and a dataset-row iterator give later voxelwise
+  APIs a common mask without losing the row/sample distinction. `values()` is
+  the compatibility bridge for existing core algorithms that still accept raw
+  domain-ordered boolean slices.
+- **2026-10-06 · Phase 11 (checked dataset transformations).** `DataColumn` can
+  now replace typed values or map any numeric storage to `f64`, including a
+  fallible row-aware form. Every such operation requires an explicit
+  `ValueMetadataPolicy`: representation-only changes may preserve metadata,
+  while arithmetic can discard units, statistics, FDR/MDF curves, label tables,
+  and recorded ranges rather than silently leaving stale claims. `Dataset`
+  provides checked column lookup plus atomic replace, transform, append,
+  select/reorder/duplicate, and remove operations. They preserve the domain,
+  sparse `SampleMap`, dataset kind, timing, and parent IDs, validate all row
+  counts, and leave the source unchanged on every error.
+- **2026-10-06 · Phase 11 (voxelwise and time-series processing).** Added shared
+  loops that compose `Dataset`, `SampleMask`, and `TimeSeriesView` without
+  exposing mutable dataset internals. `combine_columns` reads an ordered set of
+  numeric columns at each stored voxel/node; `summarize_time_series_with`
+  reduces a complete spatial series to one or more values;
+  `transform_time_series` applies a same-length in-place-style operation and
+  returns a validated dataset.
+  Scratch buffers are allocated once per operation, sparse callbacks receive
+  both row and domain-sample indices, masks are checked before callbacks, and
+  unselected series explicitly preserve input or use a caller-supplied fill.
+  Temporal outputs become `f64`, non-temporal columns stay untouched, and the
+  metadata policy from the preceding step is applied to every changed column.
+- **2026-10-06 · Phase 11 (reusable column reductions).** Added one-pass,
+  mask-aware summaries for any numeric `Dataset` column. Results distinguish
+  mask-selected, finite, non-finite, included, zero, and nonzero counts and
+  return sum, mean, population or sample variance, standard deviation, and
+  first-tie extrema. Both stored-row and full-domain sample positions are kept,
+  so sparse surface and volume datasets remain unambiguous. Callers explicitly
+  choose reject, skip, or propagate for NaN/infinity and the variance
+  denominator; an empty selection returns absent reductions rather than
+  plausible-looking zeros. Finite variance uses Welford's stable update.
+- **2026-10-06 · Phase 11 (multi-output row summaries and public spectra).**
+  `summarize_time_series_with` now reduces every voxel/node's temporal row to a
+  const-sized array of output columns in one callback and one reusable mutable
+  series buffer. Each `SummaryOutput` declares its label, role, and masked-out
+  value; an array of one output covers the one-output case without a separate
+  wrapper.
+  `signal::power_spectrum` exposes squared magnitudes without exposing the
+  private complex FFT: callers state zero-padding, full or one-sided layout,
+  raw or FFT-length normalization, and non-finite policy. The toy program now
+  uses both APIs and removed its duplicate fixed-size FFT while producing
+  byte-identical scratch, power, and volumewise BRIKs in the end-to-end check.
+- **2026-10-06 · Phase 11 (built-in temporal statistics and derived datasets).**
+  `Dataset::summarize_time_series` now provides the application-shaped layer
+  above custom row callbacks: count, sum, sum of squares, L2 norm, mean,
+  population/sample variance and standard deviation, RMS, slope per second,
+  minimum, and maximum are accumulated together in one checked traversal.
+  Mask fill and non-finite behavior remain explicit; skipped values retain
+  their original positions for slope, which requires a recorded time step.
+  Results are scalar datasets rather than loose arrays. The new concise
+  `Dataset::derive(kind, columns)` operation underlies that construction and
+  replaces the usual C sequence of empty-copying a dataset and repairing its
+  metadata: it preserves domain, sparse mapping, and spatial parent IDs while
+  clearing the old object's identity and time axis.
+- **2026-10-06 · Phase 11 (processing API naming cleanup).** The initial names
+  described implementation details rather than an AFNI programmer's intent.
+  The public vocabulary is now `combine_columns`,
+  `summarize_time_series_with`, `transform_time_series`, and `SummaryOutput`.
+  The redundant one-output wrapper was removed, and `_to_f64` disappeared from
+  operation names; computed columns remain explicitly typed as `Float64` in
+  the returned values and documentation.
+- **2026-10-07 · Phase 11 (runtime-selected temporal summaries).**
+  `Dataset::summarize_time_series_dynamic` and the corresponding free function
+  accept a slice of requests assembled from command-line options while keeping
+  the same single-pass accumulation as the fixed-array API.
+  `summarize_time_series_dynamic_with` extends custom multi-output reductions
+  with runtime-sized output descriptions and one reusable output buffer per
+  operation, avoiding both const-count match arms and per-voxel allocation.
+  The original const-generic functions remain available for fixed output lists.
+- **2026-10-07 · Volume grid transforms.** `VolumeDomain` now provides a
+  validated `world_to_ijk` inverse for oblique voxel affines and rejects
+  singular or numerically degenerate transforms. Checked `crop` and `pad`
+  operations update affine origins while deliberately clearing domain identity
+  when the represented voxel set changes.
+- **2026-10-07 · Spatial affine transforms.** Added validated
+  `AffineTransform` and `AffineTransformSeries` types, separate from volume-grid
+  affines. They support point/vector application, inversion, composition in
+  AFNI `cat_matvec` application order, pairwise series operations, and explicit
+  AFNI DICOM/RAI ↔ NIfTI RAS conversion.

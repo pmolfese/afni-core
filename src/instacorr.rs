@@ -259,54 +259,31 @@ pub fn prepare_rows(rows: &[Vec<f64>], options: &InstaCorrOptions) -> Result<Pre
     })
 }
 
-/// Build prepared series from a time-series dataset: the `TimePoint` columns (or, if
-/// there are none, its numeric `Generic` columns), in order, one row per dataset row.
-/// The dataset's time step is used when the options give no TR. Sparse datasets keep their row layout; map rows back with
-/// [`Dataset::sample_for_row`].
+/// Build prepared series from a time-series dataset, in order, one series per
+/// dataset row.
+///
+/// [`Dataset::time_series`] centralizes which columns make up the temporal
+/// axis: explicit `TimePoint` columns, or numeric `Generic` columns when a file
+/// format did not preserve that role. The dataset's time step is used when the
+/// options give no TR. Sparse datasets keep their row layout; map rows back
+/// with [`Dataset::sample_for_row`].
 pub fn prepare_dataset(dataset: &Dataset, options: &InstaCorrOptions) -> Result<PreparedSeries> {
-    if dataset.kind() != &DatasetKind::TimeSeries {
-        return Err(Error::InvalidParameter {
-            name: "dataset kind".into(),
-            reason: "seed correlation needs a time-series dataset".into(),
-        });
-    }
-    // The time points are the `TimePoint` columns. Files do not mark them (a NIML time
-    // series stores its columns as generic numbers), so when there are none, the
-    // numeric `Generic` columns of the time-series dataset are used.
-    let mut columns: Vec<&DataColumn> = dataset.columns_with_role(&ColumnRole::TimePoint).collect();
-    if columns.is_empty() {
-        columns = dataset
-            .columns_with_role(&ColumnRole::Generic)
-            .filter(|c| c.values().is_numeric())
-            .collect();
-    }
-    if columns.len() < 2 {
+    let time = dataset.time_series()?;
+    if time.time_point_count() < 2 {
         return Err(Error::InvalidParameter {
             name: "time points".into(),
             reason: format!(
                 "the dataset has {} time-point columns, need 2",
-                columns.len()
+                time.time_point_count()
             ),
         });
     }
     let mut opts = options.clone();
     if opts.tr_seconds.is_none() {
-        opts.tr_seconds = dataset.time_step_seconds();
+        opts.tr_seconds = time.time_step_seconds();
     }
-    let rows: Vec<Vec<f64>> = (0..dataset.row_count())
-        .map(|r| {
-            columns
-                .iter()
-                .map(|c| {
-                    c.values()
-                        .get_f64(r)
-                        .ok_or_else(|| Error::InvalidParameter {
-                            name: "time-point column".into(),
-                            reason: format!("column '{}' is not numeric", c.label()),
-                        })
-                })
-                .collect::<Result<Vec<f64>>>()
-        })
+    let rows: Vec<Vec<f64>> = (0..time.series_count())
+        .map(|row| time.copy_series(row))
         .collect::<Result<_>>()?;
     prepare_rows(&rows, &opts)
 }

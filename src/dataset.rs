@@ -33,7 +33,7 @@
 
 //! The format-neutral dataset model.
 
-use crate::column::{DataColumn, MissingFill};
+use crate::column::{DataColumn, MissingFill, ValueMetadataPolicy};
 use crate::domain::Domain;
 use crate::error::{Error, Result};
 use crate::mapping::SampleMap;
@@ -191,6 +191,15 @@ impl Dataset {
     pub fn columns(&self) -> &[DataColumn] {
         &self.columns
     }
+
+    /// Column at zero-based `index`, with a checked diagnostic instead of a
+    /// slice-indexing panic.
+    pub fn column_at(&self, index: usize) -> Result<&DataColumn> {
+        self.columns.get(index).ok_or(Error::ColumnIndexOutOfRange {
+            index,
+            len: self.columns.len(),
+        })
+    }
     /// Number of rows.
     pub fn row_count(&self) -> usize {
         self.map.row_count()
@@ -232,6 +241,179 @@ impl Dataset {
         self.columns.iter().filter(move |c| c.role() == role)
     }
 
+    /// Return a dataset with all columns replaced, preserving its domain, row
+    /// mapping, kind, timing, and parent identifiers.
+    ///
+    /// The replacement must be nonempty and every column must have exactly the
+    /// current row count. Validation finishes before a new dataset is returned,
+    /// so an error cannot partially edit `self`.
+    pub fn replace_columns(&self, columns: Vec<DataColumn>) -> Result<Self> {
+        validate_replacement_columns(&columns, self.row_count())?;
+        Ok(Self {
+            columns,
+            ..self.clone()
+        })
+    }
+
+    /// Build a related dataset from newly computed columns.
+    ///
+    /// This is the concise counterpart to AFNI C's common "empty copy, replace
+    /// bricks, then repair metadata" sequence. The result keeps this dataset's
+    /// domain, dense-or-sparse row mapping, and domain/geometry parent
+    /// identifiers. It deliberately clears the source dataset's own identifier
+    /// because the result is a new object, and clears the time axis because a
+    /// reduction or other derived result is not automatically a time series.
+    ///
+    /// Use [`replace_columns`](Self::replace_columns) instead when the columns
+    /// still describe the same scientific dataset and its kind and time axis
+    /// remain valid. A derived time series can explicitly add its new timing
+    /// with [`with_time_step_seconds`](Self::with_time_step_seconds) and
+    /// [`with_time_start_seconds`](Self::with_time_start_seconds).
+    pub fn derive(&self, kind: DatasetKind, columns: Vec<DataColumn>) -> Result<Self> {
+        validate_replacement_columns(&columns, self.row_count())?;
+        Ok(Self {
+            kind,
+            domain: self.domain.clone(),
+            map: self.map.clone(),
+            columns,
+            time_step_seconds: None,
+            time_start_seconds: None,
+            parent_ids: ParentIds {
+                self_id: None,
+                domain_parent: self.parent_ids.domain_parent.clone(),
+                geometry_parent: self.parent_ids.geometry_parent.clone(),
+            },
+        })
+    }
+
+    /// Return a dataset with one column replaced at `index`.
+    ///
+    /// The replacement row count is checked before cloning or changing the
+    /// dataset. All dataset-level metadata and every other column are retained.
+    pub fn replace_column(&self, index: usize, column: DataColumn) -> Result<Self> {
+        self.column_at(index)?;
+        validate_replacement_column(&column, self.row_count())?;
+        let mut output = self.clone();
+        output.columns[index] = column;
+        Ok(output)
+    }
+
+    /// Transform one column and validate the result as one atomic operation.
+    ///
+    /// The closure borrows the current column and returns its replacement. If
+    /// the closure fails or changes the row count, no dataset is returned and
+    /// the original remains unchanged.
+    pub fn transform_column(
+        &self,
+        index: usize,
+        transform: impl FnOnce(&DataColumn) -> Result<DataColumn>,
+    ) -> Result<Self> {
+        let replacement = transform(self.column_at(index)?)?;
+        self.replace_column(index, replacement)
+    }
+
+    /// Return a dataset with `column` appended after the existing columns.
+    pub fn append_column(&self, column: DataColumn) -> Result<Self> {
+        validate_replacement_column(&column, self.row_count())?;
+        let mut columns = self.columns.clone();
+        columns.push(column);
+        Ok(Self {
+            columns,
+            ..self.clone()
+        })
+    }
+
+    /// Select and reorder columns by zero-based index.
+    ///
+    /// Repeated indices intentionally duplicate columns, matching AFNI-style
+    /// column selectors. An empty selection is rejected because a core
+    /// [`Dataset`] always contains at least one column.
+    pub fn select_columns(&self, indices: &[usize]) -> Result<Self> {
+        if indices.is_empty() {
+            return Err(Error::Empty("column selection".into()));
+        }
+        let columns = indices
+            .iter()
+            .map(|&index| self.column_at(index).cloned())
+            .collect::<Result<Vec<_>>>()?;
+        self.replace_columns(columns)
+    }
+
+    /// Return a dataset without the column at `index`.
+    ///
+    /// Removing the sole column is rejected so the dataset invariant remains
+    /// true. Use a different dataset representation if zero columns has meaning
+    /// for the application.
+    pub fn remove_column(&self, index: usize) -> Result<Self> {
+        self.column_at(index)?;
+        if self.columns.len() == 1 {
+            return Err(Error::Empty("dataset (no columns)".into()));
+        }
+        let mut columns = self.columns.clone();
+        columns.remove(index);
+        Ok(Self {
+            columns,
+            ..self.clone()
+        })
+    }
+
+    /// Borrow this dataset as spatial rows of temporal values.
+    ///
+    /// This is the file-neutral counterpart to extracting one voxel or surface
+    /// node's time series. It validates the dataset kind and time-point columns;
+    /// see [`TimeSeriesView`](crate::timeseries::TimeSeriesView) for the column
+    /// selection rules and row-oriented accessors.
+    pub fn time_series(&self) -> Result<crate::timeseries::TimeSeriesView<'_>> {
+        crate::timeseries::TimeSeriesView::new(self)
+    }
+
+    /// Compute reusable counts and descriptive statistics for one column.
+    ///
+    /// `mask` is interpreted in complete domain-sample order and checked
+    /// against this dataset. Sparse rows are mapped to their named voxel or
+    /// surface node, and extrema report both stored-row and domain-sample
+    /// positions. See [`crate::reduction`] for the precise count, non-finite,
+    /// and variance conventions.
+    pub fn summarize_column(
+        &self,
+        column_index: usize,
+        mask: Option<&crate::mask::SampleMask>,
+        options: crate::reduction::ColumnSummaryOptions,
+    ) -> Result<crate::reduction::ColumnSummary> {
+        crate::reduction::summarize_column(self, column_index, mask, options)
+    }
+
+    /// Compute several built-in statistics across every spatial time series.
+    ///
+    /// This is the method form of [`crate::processing::summarize_time_series`].
+    /// Every requested statistic is accumulated during the same traversal, and
+    /// the result is a derived scalar dataset with this dataset's domain and
+    /// row mapping.
+    pub fn summarize_time_series<const N: usize>(
+        &self,
+        mask: Option<&crate::mask::SampleMask>,
+        summaries: [crate::processing::TimeSeriesSummary; N],
+        non_finite: crate::numeric::NonFinitePolicy,
+    ) -> Result<Self> {
+        crate::processing::summarize_time_series(self, mask, summaries, non_finite)
+    }
+
+    /// Compute a runtime-selected list of built-in time-series statistics.
+    ///
+    /// This is the method form of
+    /// [`crate::processing::summarize_time_series_dynamic`]. Use it when CLI
+    /// options or configuration determine the output count at runtime; the
+    /// const-generic [`summarize_time_series`](Self::summarize_time_series)
+    /// remains convenient for fixed output lists.
+    pub fn summarize_time_series_dynamic(
+        &self,
+        mask: Option<&crate::mask::SampleMask>,
+        summaries: &[crate::processing::TimeSeriesSummary],
+        non_finite: crate::numeric::NonFinitePolicy,
+    ) -> Result<Self> {
+        crate::processing::summarize_time_series_dynamic(self, mask, summaries, non_finite)
+    }
+
     /// Equality of the whole dataset with NaN equal to NaN.
     ///
     /// Plain `==` is IEEE-faithful, so a dataset containing missing (NaN)
@@ -267,12 +449,41 @@ impl Dataset {
         let columns = self
             .columns
             .iter()
-            .map(|c| c.with_values(c.values().expand(&self.map, n, fill)?))
+            .map(|c| {
+                c.with_values(
+                    c.values().expand(&self.map, n, fill)?,
+                    ValueMetadataPolicy::Preserve,
+                )
+            })
             .collect::<Result<Vec<_>>>()?;
         Ok(Self {
             map: SampleMap::dense(n),
             columns,
             ..self.clone()
+        })
+    }
+}
+
+/// Validate all columns for a dataset-level replacement.
+fn validate_replacement_columns(columns: &[DataColumn], rows: usize) -> Result<()> {
+    if columns.is_empty() {
+        return Err(Error::Empty("dataset (no columns)".into()));
+    }
+    for column in columns {
+        validate_replacement_column(column, rows)?;
+    }
+    Ok(())
+}
+
+/// Validate one column against the dataset row count.
+fn validate_replacement_column(column: &DataColumn, rows: usize) -> Result<()> {
+    if column.len() == rows {
+        Ok(())
+    } else {
+        Err(Error::LengthMismatch {
+            what: format!("column '{}' rows", column.label()),
+            expected: rows,
+            found: column.len(),
         })
     }
 }
@@ -429,5 +640,168 @@ mod tests {
             .map(|c| c.label())
             .collect();
         assert_eq!(hits, ["b"]);
+    }
+
+    #[test]
+    fn checked_column_access_and_edits_preserve_dataset_structure() {
+        let ids = ParentIds {
+            self_id: Some("derived".into()),
+            domain_parent: Some("surface".into()),
+            geometry_parent: None,
+        };
+        let source = Dataset::indexed(
+            DatasetKind::Scalar,
+            surface(5),
+            vec![3, 1],
+            vec![col("a", vec![30.0, 10.0]), col("b", vec![3.0, 1.0])],
+        )
+        .unwrap()
+        .with_time_step_seconds(Some(2.0))
+        .unwrap()
+        .with_time_start_seconds(Some(-1.0))
+        .unwrap()
+        .with_parent_ids(ids.clone());
+
+        assert!(matches!(
+            source.column_at(2),
+            Err(Error::ColumnIndexOutOfRange { index: 2, len: 2 })
+        ));
+
+        let replacement = col("replacement", vec![300.0, 100.0]);
+        let replaced = source.replace_column(0, replacement).unwrap();
+        assert_eq!(replaced.columns()[0].label(), "replacement");
+        assert_eq!(replaced.columns()[1].label(), "b");
+        assert_eq!(source.columns()[0].label(), "a");
+        assert_eq!(replaced.domain(), source.domain());
+        assert_eq!(replaced.map(), source.map());
+        assert_eq!(replaced.kind(), source.kind());
+        assert_eq!(replaced.time_step_seconds(), Some(2.0));
+        assert_eq!(replaced.time_start_seconds(), Some(-1.0));
+        assert_eq!(replaced.parent_ids(), &ids);
+
+        let bad_length = col("short", vec![1.0]);
+        assert!(matches!(
+            source.replace_column(0, bad_length),
+            Err(Error::LengthMismatch {
+                expected: 2,
+                found: 1,
+                ..
+            })
+        ));
+        assert!(matches!(
+            source.replace_columns(vec![]),
+            Err(Error::Empty(_))
+        ));
+    }
+
+    #[test]
+    fn derive_keeps_spatial_identity_but_clears_source_and_time_identity() {
+        let source = Dataset::indexed(
+            DatasetKind::TimeSeries,
+            surface(6),
+            vec![4, 1],
+            vec![col("t0", vec![40.0, 10.0]), col("t1", vec![41.0, 11.0])],
+        )
+        .unwrap()
+        .with_time_step_seconds(Some(2.0))
+        .unwrap()
+        .with_time_start_seconds(Some(-1.0))
+        .unwrap()
+        .with_parent_ids(ParentIds {
+            self_id: Some("source-dataset".into()),
+            domain_parent: Some("surface-topology".into()),
+            geometry_parent: Some("surface-geometry".into()),
+        });
+
+        let derived = source
+            .derive(DatasetKind::Scalar, vec![col("mean", vec![40.5, 10.5])])
+            .unwrap();
+
+        assert_eq!(derived.kind(), &DatasetKind::Scalar);
+        assert_eq!(derived.domain(), source.domain());
+        assert_eq!(derived.map(), source.map());
+        assert_eq!(derived.columns()[0].label(), "mean");
+        assert_eq!(derived.time_step_seconds(), None);
+        assert_eq!(derived.time_start_seconds(), None);
+        assert_eq!(derived.parent_ids().self_id, None);
+        assert_eq!(
+            derived.parent_ids().domain_parent.as_deref(),
+            Some("surface-topology")
+        );
+        assert_eq!(
+            derived.parent_ids().geometry_parent.as_deref(),
+            Some("surface-geometry")
+        );
+
+        assert!(source.derive(DatasetKind::Scalar, vec![]).is_err());
+        assert!(source
+            .derive(DatasetKind::Scalar, vec![col("short", vec![1.0])])
+            .is_err());
+        // Derivation never mutates or strips metadata from the source.
+        assert_eq!(source.time_step_seconds(), Some(2.0));
+        assert_eq!(
+            source.parent_ids().self_id.as_deref(),
+            Some("source-dataset")
+        );
+    }
+
+    #[test]
+    fn transform_append_select_and_remove_are_atomic_and_checked() {
+        let source = Dataset::dense(
+            DatasetKind::Scalar,
+            surface(2),
+            vec![col("a", vec![1.0, 2.0]), col("b", vec![3.0, 4.0])],
+        )
+        .unwrap();
+
+        let transformed = source
+            .transform_column(0, |column| {
+                column.map_numeric_to_f64(ValueMetadataPolicy::DiscardValueMetadata, |value| {
+                    value + 10.0
+                })
+            })
+            .unwrap();
+        assert_eq!(
+            transformed.columns()[0].values(),
+            &crate::column::ColumnData::Float64(vec![11.0, 12.0])
+        );
+        assert_eq!(source.columns()[0].values().get_f64(0), Some(1.0));
+
+        let failed = source.transform_column(0, |_| {
+            Err(Error::InvalidParameter {
+                name: "transform".into(),
+                reason: "test failure".into(),
+            })
+        });
+        assert!(failed.is_err());
+        assert_eq!(source.columns()[0].values().get_f64(0), Some(1.0));
+
+        let appended = source.append_column(col("c", vec![5.0, 6.0])).unwrap();
+        assert_eq!(appended.columns().len(), 3);
+        assert!(source.append_column(col("short", vec![5.0])).is_err());
+
+        let selected = appended.select_columns(&[2, 0, 2]).unwrap();
+        assert_eq!(
+            selected
+                .columns()
+                .iter()
+                .map(DataColumn::label)
+                .collect::<Vec<_>>(),
+            ["c", "a", "c"]
+        );
+        assert!(source.select_columns(&[]).is_err());
+        assert!(matches!(
+            source.select_columns(&[2]),
+            Err(Error::ColumnIndexOutOfRange { index: 2, len: 2 })
+        ));
+
+        let removed = source.remove_column(0).unwrap();
+        assert_eq!(removed.columns().len(), 1);
+        assert_eq!(removed.columns()[0].label(), "b");
+        assert!(removed.remove_column(0).is_err());
+        assert!(matches!(
+            source.remove_column(9),
+            Err(Error::ColumnIndexOutOfRange { index: 9, len: 2 })
+        ));
     }
 }

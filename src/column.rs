@@ -158,6 +158,28 @@ pub enum ColumnData {
     Text(Vec<String>),
 }
 
+/// What to do with metadata when replacing or transforming column values.
+///
+/// A recorded range, statistic, FDR/MDF curve, label table, or unit can become
+/// false after arithmetic changes the values. Requiring this choice prevents a
+/// generic transformation from silently carrying stale scientific meaning.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValueMetadataPolicy {
+    /// Keep all metadata.
+    ///
+    /// Use this for representation-only changes such as sparse-to-dense
+    /// expansion, or when the caller knows the replacement has identical
+    /// scientific meaning.
+    Preserve,
+    /// Clear units, statistic metadata, FDR/MDF curves, label tables, and the
+    /// recorded range.
+    ///
+    /// The column label and role remain because they identify the column's
+    /// place in the dataset. Call the existing `with_*` builders to attach new
+    /// metadata after the transformation.
+    DiscardValueMetadata,
+}
+
 /// Values used for samples that have no row when expanding sparse data.
 #[derive(Debug, Clone, PartialEq)]
 pub struct MissingFill {
@@ -405,6 +427,76 @@ impl DataColumn {
     pub fn values(&self) -> &ColumnData {
         &self.values
     }
+
+    /// Return a column with replacement values and an explicit metadata policy.
+    ///
+    /// This validates only the column-level invariant that values are nonempty.
+    /// A standalone column does not know its dataset row count; use
+    /// [`Dataset::replace_column`](crate::dataset::Dataset::replace_column) or
+    /// [`Dataset::transform_column`](crate::dataset::Dataset::transform_column)
+    /// to validate the replacement against a dataset atomically.
+    pub fn with_values(&self, values: ColumnData, metadata: ValueMetadataPolicy) -> Result<Self> {
+        if values.is_empty() {
+            return Err(Error::Empty(format!("column '{}'", self.label)));
+        }
+        let mut output = Self {
+            values,
+            ..self.clone()
+        };
+        if metadata == ValueMetadataPolicy::DiscardValueMetadata {
+            output.units = None;
+            output.stat = None;
+            output.fdr_curve = None;
+            output.mdf_curve = None;
+            output.label_table = None;
+            output.recorded_range = None;
+        }
+        Ok(output)
+    }
+
+    /// Map every numeric value to an `f64` while choosing how metadata changes.
+    ///
+    /// Integer and `f32` input is widened through [`ColumnData::get_f64`]. An
+    /// `i64` outside the exactly representable `f64` range may lose precision;
+    /// callers that require exact integer arithmetic should match the typed
+    /// [`ColumnData`] variant and pass the result to [`with_values`](Self::with_values).
+    /// Text columns are rejected. Non-finite input or output is retained, just
+    /// as it is in ordinary floating-point columns.
+    pub fn map_numeric_to_f64(
+        &self,
+        metadata: ValueMetadataPolicy,
+        mut transform: impl FnMut(f64) -> f64,
+    ) -> Result<Self> {
+        self.try_map_numeric_to_f64(metadata, |_, value| Ok(transform(value)))
+    }
+
+    /// Fallible, row-aware form of [`map_numeric_to_f64`](Self::map_numeric_to_f64).
+    ///
+    /// Evaluation stops at the first error and no column is returned. The
+    /// zero-based row index lets transformations report or treat particular
+    /// rows differently without maintaining an external counter.
+    pub fn try_map_numeric_to_f64(
+        &self,
+        metadata: ValueMetadataPolicy,
+        mut transform: impl FnMut(usize, f64) -> Result<f64>,
+    ) -> Result<Self> {
+        if !self.values.is_numeric() {
+            return Err(Error::InvalidParameter {
+                name: "column values".into(),
+                reason: format!("column '{}' is text, not numeric", self.label),
+            });
+        }
+        let values = (0..self.len())
+            .map(|row| {
+                let value = self
+                    .values
+                    .get_f64(row)
+                    .expect("validated numeric column and in-range row");
+                transform(row, value)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.with_values(ColumnData::Float64(values), metadata)
+    }
     /// Number of rows.
     pub fn len(&self) -> usize {
         self.values.len()
@@ -468,18 +560,6 @@ impl DataColumn {
             recorded: self.recorded_range,
             computed: self.values.computed_range(),
         }
-    }
-
-    /// The same metadata with different values (used by dense/sparse
-    /// conversion). Fails if `values` is empty.
-    pub(crate) fn with_values(&self, values: ColumnData) -> Result<Self> {
-        if values.is_empty() {
-            return Err(Error::Empty(format!("column '{}'", self.label)));
-        }
-        Ok(Self {
-            values,
-            ..self.clone()
-        })
     }
 }
 
@@ -618,5 +698,93 @@ mod tests {
             ..MissingFill::default()
         };
         assert!(ColumnData::Int32(vec![9]).expand(&map, 4, &bad).is_err());
+    }
+
+    #[test]
+    fn replacing_values_requires_an_explicit_metadata_policy() {
+        let recorded = RecordedRange {
+            range: ColumnRange::new(1.0, 2.0).unwrap(),
+            min_sample: Some(0),
+            max_sample: Some(1),
+        };
+        let curve = ThresholdCurve::new(0.0, 1.0, vec![0.0, 1.0]).unwrap();
+        let source = DataColumn::new(
+            "statistic",
+            ColumnRole::Statistic,
+            ColumnData::Float32(vec![1.0, 2.0]),
+        )
+        .unwrap()
+        .with_units(Some("z".into()))
+        .with_stat(Some(StatSpec::new(crate::stat::StatKind::Zscore, &[], 0.0)))
+        .with_fdr_curve(Some(curve.clone()))
+        .with_mdf_curve(Some(curve))
+        .with_label_table(Some(LabelTable::default()))
+        .with_recorded_range(Some(recorded));
+
+        let preserved = source
+            .with_values(
+                ColumnData::Float64(vec![1.0, 2.0]),
+                ValueMetadataPolicy::Preserve,
+            )
+            .unwrap();
+        assert_eq!(preserved.label(), source.label());
+        assert_eq!(preserved.role(), source.role());
+        assert_eq!(preserved.units(), source.units());
+        assert_eq!(preserved.stat(), source.stat());
+        assert_eq!(preserved.fdr_curve(), source.fdr_curve());
+        assert_eq!(preserved.mdf_curve(), source.mdf_curve());
+        assert_eq!(preserved.label_table(), source.label_table());
+        assert_eq!(preserved.range_report().recorded, Some(recorded));
+
+        let discarded = source
+            .with_values(
+                ColumnData::Float64(vec![10.0, 20.0]),
+                ValueMetadataPolicy::DiscardValueMetadata,
+            )
+            .unwrap();
+        assert_eq!(discarded.label(), source.label());
+        assert_eq!(discarded.role(), source.role());
+        assert_eq!(discarded.units(), None);
+        assert_eq!(discarded.stat(), None);
+        assert_eq!(discarded.fdr_curve(), None);
+        assert_eq!(discarded.mdf_curve(), None);
+        assert_eq!(discarded.label_table(), None);
+        assert_eq!(discarded.range_report().recorded, None);
+        assert!(source
+            .with_values(ColumnData::Float64(vec![]), ValueMetadataPolicy::Preserve)
+            .is_err());
+    }
+
+    #[test]
+    fn numeric_mapping_is_typed_fallible_and_row_aware() {
+        let source = col(ColumnData::Int32(vec![-2, 3]));
+        let doubled = source
+            .map_numeric_to_f64(ValueMetadataPolicy::DiscardValueMetadata, |value| {
+                value * 2.0
+            })
+            .unwrap();
+        assert_eq!(doubled.values(), &ColumnData::Float64(vec![-4.0, 6.0]));
+
+        let err = source.try_map_numeric_to_f64(
+            ValueMetadataPolicy::DiscardValueMetadata,
+            |row, value| {
+                if row == 1 {
+                    Err(Error::InvalidParameter {
+                        name: "row".into(),
+                        reason: "test failure".into(),
+                    })
+                } else {
+                    Ok(value)
+                }
+            },
+        );
+        assert!(matches!(err, Err(Error::InvalidParameter { ref name, .. }) if name == "row"));
+        assert_eq!(source.values(), &ColumnData::Int32(vec![-2, 3]));
+
+        let text = col(ColumnData::Text(vec!["one".into()]));
+        assert!(matches!(
+            text.map_numeric_to_f64(ValueMetadataPolicy::Preserve, |value| value),
+            Err(Error::InvalidParameter { ref name, .. }) if name == "column values"
+        ));
     }
 }

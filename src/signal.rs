@@ -44,10 +44,10 @@
 //   with the same 1e-8 cutoff; the two agree for any sensible set of regressors.
 // ---------------------------------------------------------------------------
 
-//! Generic signal operations: detrending, orts, normalization, FFT bandpass.
+//! Generic signal operations: detrending, orts, power spectra, and FFT bandpass.
 
 use crate::error::{Error, Result};
-use crate::numeric::ensure_finite;
+use crate::numeric::{ensure_finite, NonFinitePolicy};
 
 /// AFNI's `ICOR_MAX_FTOP`: a top frequency at or above this means "no upper limit"
 /// (a high-pass filter).
@@ -387,6 +387,133 @@ fn fft(data: &mut [Complex], inverse: bool) {
     for k in 0..n {
         data[k] = a[k].scale(inv_m).mul(chirp[k]);
     }
+}
+
+/// Which bins a real-input [`power_spectrum`] returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SpectrumLayout {
+    /// All `nfft` bins, including the redundant negative-frequency half.
+    Full,
+    /// Bins `0..=floor(nfft / 2)`.
+    ///
+    /// Interior bins are not doubled. This is exactly the corresponding prefix
+    /// of [`Full`](Self::Full), which keeps the operation unambiguous for
+    /// callers that want to combine particular bins themselves.
+    OneSided,
+}
+
+/// Scaling applied to squared FFT magnitudes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SpectrumNormalization {
+    /// Raw squared magnitude of the unnormalized forward transform.
+    Raw,
+    /// Divide every squared magnitude by the FFT length.
+    ///
+    /// For [`SpectrumLayout::Full`], the sum of the returned powers equals the
+    /// sum of squares of the zero-padded input (Parseval scaling).
+    DivideByFftLength,
+}
+
+/// Explicit choices for [`power_spectrum`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct PowerSpectrumOptions {
+    /// Transform length. `None` uses the input length; `Some(n)` zero-pads to
+    /// `n` and must not be shorter than the input.
+    pub fft_len: Option<usize>,
+    /// Whether to return the full transform or its nonnegative-frequency half.
+    pub layout: SpectrumLayout,
+    /// Scaling applied after squared magnitudes are computed.
+    pub normalization: SpectrumNormalization,
+    /// Policy for NaN and infinity in the ordered input series.
+    ///
+    /// `Reject` reports the first bad sample and `Propagate` lets ordinary FFT
+    /// arithmetic carry it into the result. `Skip` cannot preserve temporal
+    /// positions and returns an error if a non-finite sample is encountered;
+    /// replace such samples explicitly before calling when that is intended.
+    pub non_finite: NonFinitePolicy,
+}
+
+impl PowerSpectrumOptions {
+    /// Construct a spectrum request while making every convention explicit.
+    pub const fn new(
+        fft_len: Option<usize>,
+        layout: SpectrumLayout,
+        normalization: SpectrumNormalization,
+        non_finite: NonFinitePolicy,
+    ) -> Self {
+        Self {
+            fft_len,
+            layout,
+            normalization,
+            non_finite,
+        }
+    }
+}
+
+/// Full or one-sided power spectrum of a real-valued series.
+///
+/// The input is copied into a zero-filled transform buffer and passed through
+/// the same arbitrary-length FFT used by [`bandpass_vectors`]. The forward FFT
+/// itself is unnormalized. [`PowerSpectrumOptions`] makes padding, returned
+/// bins, output scaling, and non-finite handling visible at the call site.
+///
+/// This function computes only squared magnitudes. The private complex FFT and
+/// its inverse remain implementation details so callers cannot accidentally
+/// depend on their internal representation or scaling convention.
+pub fn power_spectrum(values: &[f64], options: PowerSpectrumOptions) -> Result<Vec<f64>> {
+    if values.is_empty() {
+        return Err(Error::Empty("power spectrum input".into()));
+    }
+    let fft_len = options.fft_len.unwrap_or(values.len());
+    if fft_len < values.len() {
+        return Err(Error::InvalidParameter {
+            name: "FFT length".into(),
+            reason: format!(
+                "must be at least the {} input samples, got {fft_len}",
+                values.len()
+            ),
+        });
+    }
+
+    let mut transformed = vec![Complex::ZERO; fft_len];
+    for (sample, &value) in values.iter().enumerate() {
+        transformed[sample].re = if value.is_finite() {
+            // Keep the hot path allocation-free; the diagnostic string below
+            // is needed only for an actual bad sample.
+            value
+        } else {
+            match options.non_finite {
+                NonFinitePolicy::Reject => {
+                    return Err(Error::NonFinite {
+                        what: format!("power spectrum sample {sample}"),
+                        value,
+                    });
+                }
+                NonFinitePolicy::Skip => {
+                    return Err(Error::InvalidParameter {
+                    name: "power spectrum non-finite policy".into(),
+                    reason: "Skip cannot remove a sample from an ordered time series; replace it explicitly or choose Reject/Propagate".into(),
+                });
+                }
+                NonFinitePolicy::Propagate => value,
+            }
+        };
+    }
+    fft(&mut transformed, false);
+
+    let bins = match options.layout {
+        SpectrumLayout::Full => fft_len,
+        SpectrumLayout::OneSided => fft_len / 2 + 1,
+    };
+    let scale = match options.normalization {
+        SpectrumNormalization::Raw => 1.0,
+        SpectrumNormalization::DivideByFftLength => 1.0 / fft_len as f64,
+    };
+    Ok(transformed
+        .into_iter()
+        .take(bins)
+        .map(|value| (value.re * value.re + value.im * value.im) * scale)
+        .collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -802,6 +929,78 @@ mod tests {
                 assert!((a.im / n as f64 - b.im).abs() < 1e-10);
             }
         }
+    }
+
+    #[test]
+    fn public_power_spectrum_makes_padding_layout_and_scaling_explicit() {
+        let full_raw = PowerSpectrumOptions::new(
+            Some(4),
+            SpectrumLayout::Full,
+            SpectrumNormalization::Raw,
+            NonFinitePolicy::Reject,
+        );
+        let constant = power_spectrum(&[1.0; 4], full_raw).unwrap();
+        assert_eq!(constant.len(), 4);
+        assert!((constant[0] - 16.0).abs() < 1.0e-12);
+        assert!(constant[1..].iter().all(|power| power.abs() < 1.0e-12));
+
+        // Zero padding a unit impulse gives unit power in every full-spectrum
+        // bin, which also fixes the forward-transform normalization convention.
+        assert_eq!(power_spectrum(&[1.0, 0.0], full_raw).unwrap(), vec![1.0; 4]);
+
+        let one_sided = PowerSpectrumOptions::new(
+            Some(4),
+            SpectrumLayout::OneSided,
+            SpectrumNormalization::Raw,
+            NonFinitePolicy::Reject,
+        );
+        assert_eq!(power_spectrum(&[1.0, 0.0], one_sided).unwrap().len(), 3);
+
+        let parseval = PowerSpectrumOptions::new(
+            None,
+            SpectrumLayout::Full,
+            SpectrumNormalization::DivideByFftLength,
+            NonFinitePolicy::Reject,
+        );
+        let signal = [1.0, -2.0, 3.0, -4.0, 5.0];
+        let spectral_energy: f64 = power_spectrum(&signal, parseval).unwrap().iter().sum();
+        let signal_energy: f64 = signal.iter().map(|value| value * value).sum();
+        assert!((spectral_energy - signal_energy).abs() < 1.0e-10);
+
+        assert!(power_spectrum(
+            &signal,
+            PowerSpectrumOptions {
+                fft_len: Some(4),
+                ..parseval
+            }
+        )
+        .is_err());
+        assert!(power_spectrum(&[], parseval).is_err());
+    }
+
+    #[test]
+    fn public_power_spectrum_non_finite_policy_is_order_preserving() {
+        let options = |non_finite| {
+            PowerSpectrumOptions::new(
+                None,
+                SpectrumLayout::Full,
+                SpectrumNormalization::Raw,
+                non_finite,
+            )
+        };
+        let values = [1.0, f64::NAN, 2.0];
+        assert!(matches!(
+            power_spectrum(&values, options(NonFinitePolicy::Reject)),
+            Err(Error::NonFinite { ref what, value })
+                if what == "power spectrum sample 1" && value.is_nan()
+        ));
+        assert!(matches!(
+            power_spectrum(&values, options(NonFinitePolicy::Skip)),
+            Err(Error::InvalidParameter { ref name, .. })
+                if name == "power spectrum non-finite policy"
+        ));
+        let propagated = power_spectrum(&values, options(NonFinitePolicy::Propagate)).unwrap();
+        assert!(propagated.iter().all(|power| power.is_nan()));
     }
 
     #[test]
