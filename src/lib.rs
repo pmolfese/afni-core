@@ -72,6 +72,7 @@
 //! | [`mapping`] | Dense and indexed (sparse) row-to-sample maps | 1 |
 //! | [`column`](mod@column) | Typed columns and column metadata | 1 |
 //! | [`dataset`] | The validated [`Dataset`](dataset::Dataset) model and derived datasets | 1 |
+//! | [`design`] | Regression design matrices, censor maps, runs, and regressors | 13 |
 //! | [`stat`] | `StatKind` / `StatSpec` (what a statistic *is*) | 1 (math in 2) |
 //! | [`special`] | log-gamma/beta, incomplete beta/gamma, normal tails (in log space) | 2 |
 //! | [`stats`] | Tail-aware p-values and critical values | 2 |
@@ -161,6 +162,7 @@ pub mod column;
 pub mod composite;
 pub mod curve;
 pub mod dataset;
+pub mod design;
 pub mod domain;
 pub mod error;
 pub mod fdr;

@@ -45,6 +45,7 @@ AFNI/SUMA, and why, is listed in
 | `src/lib.rs` | Crate docs, scope, module list |
 | `src/error.rs`, `src/numeric.rs` | One `Error` type; `f32`/`f64` rules, checked indices, NaN/Inf policy |
 | `src/domain.rs`, `src/mapping.rs`, `src/column.rs`, `src/dataset.rs` | Surface/volume domains, dense/sparse row maps, typed columns, the `Dataset`, and checked immutable transformations |
+| `src/design.rs` | File-neutral regression design matrices, regressor roles, censor maps, run boundaries, and stimulus ranges |
 | `src/stat.rs`, `src/stats.rs`, `src/special.rs` | `StatSpec`; p-values and critical values with an explicit `Tail`; log-space special functions |
 | `src/curve.rs`, `src/fdr.rs` | Validated FDR/MDF curves with AFNI's interpolation; q-values, curve construction |
 | `src/threshold.rs`, `src/overlay.rs`, `src/composite.rs` | Thresholds (exact boundaries, AFNI/SUMA fades, matched-p transfer); data + display spec to colors and a pass mask; alpha compositing |

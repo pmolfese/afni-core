@@ -35,6 +35,8 @@ crates, or `flate2` appear. It also scans `src/` for `std::fs`, `std::path`,
 |---|---|
 | Bytes, syntax, compression, raw attributes, round-trip fidelity | `afni-io` |
 | Domains, typed datasets, p-values, FDR, colors, thresholds, clusters, ROIs | `afni-core` |
+| Design-matrix meaning: regressors, censor maps, runs, timing, stimuli | `afni-core` |
+| X-matrix header syntax, unknown attributes, command-line provenance | `afni-io` |
 | Windows, GPU, cameras, picking, sockets, preferences, CLI strings | viewers/tools |
 
 Boundary test: a public `afni-core` function must work on caller-supplied
